@@ -39,6 +39,7 @@ export interface ProjectConfig {
       default_state: string;
       auto_assign: boolean;
       require_parent: boolean;
+      default_type: string;
     };
   };
 }
@@ -159,6 +160,7 @@ export const ProjectConfigSchema = z.object({
           default_state: z.string().default("New"),
           auto_assign: z.boolean().default(false),
           require_parent: z.boolean().default(false),
+          default_type: z.string().default("User Story"),
         }),
       ),
     }),

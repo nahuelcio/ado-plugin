@@ -27,6 +27,7 @@ interface WiCreateSection {
   default_state: string;
   auto_assign: boolean;
   require_parent: boolean;
+  default_type: string;
 }
 
 interface TestProjectConfig {
@@ -103,6 +104,7 @@ function makeConfig(createOverrides?: Partial<WiCreateSection>): TestProjectConf
         default_state: "New",
         auto_assign: false,
         require_parent: false,
+        default_type: "User Story",
         ...createOverrides,
       },
     },
@@ -683,5 +685,167 @@ describe("parent relation operation in createWorkItem body", () => {
 
     const hasRelation = body.some((op) => op.path === "/relations/-");
     expect(hasRelation).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. buildFieldPatchOps with customFields — custom ADO field passthrough
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("buildFieldPatchOps with customFields", () => {
+  it("appends custom fields as direct ADO path operations", () => {
+    const ops = buildFieldPatchOps(
+      { title: "My WI" },
+      { "/fields/Custom.Sponsors": "Juan Pérez" },
+    );
+    const customOp = ops.find((op) => op.path === "/fields/Custom.Sponsors");
+    expect(customOp).toEqual({
+      op: "add",
+      path: "/fields/Custom.Sponsors",
+      value: "Juan Pérez",
+    });
+  });
+
+  it("handles multiple custom fields", () => {
+    const ops = buildFieldPatchOps(
+      { title: "My WI" },
+      {
+        "/fields/Custom.Sponsors": "María",
+        "/fields/Custom.USProducto": "yWhatsApp",
+        "/fields/Custom.Version": "2.5",
+      },
+    );
+    expect(ops).toHaveLength(4); // 1 known + 3 custom
+    const paths = ops.map((op) => op.path);
+    expect(paths).toContain("/fields/Custom.Sponsors");
+    expect(paths).toContain("/fields/Custom.USProducto");
+    expect(paths).toContain("/fields/Custom.Version");
+  });
+
+  it("returns empty array with no fields and no customFields", () => {
+    const ops = buildFieldPatchOps({});
+    expect(ops).toEqual([]);
+  });
+
+  it("handles only customFields with no standard fields", () => {
+    const ops = buildFieldPatchOps({}, { "/fields/Custom.Foo": "bar" });
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toEqual({
+      op: "add",
+      path: "/fields/Custom.Foo",
+      value: "bar",
+    });
+  });
+
+  it("places custom fields after known field ops", () => {
+    const ops = buildFieldPatchOps(
+      { title: "My WI", description: "Details" },
+      { "/fields/Custom.X": "val" },
+    );
+
+    const customIdx = ops.findIndex((op) => op.path === "/fields/Custom.X");
+    const lastKnownIdx = ops.reduce(
+      (last, op, i) =>
+        !op.path.startsWith("/fields/Custom.") ? i : last,
+      -1,
+    );
+
+    expect(customIdx).toBeGreaterThan(lastKnownIdx);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. buildFieldPatchOps customFields validation
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("buildFieldPatchOps customFields validation", () => {
+  it("throws when customField path collides with a known FIELD_MAP path", () => {
+    expect(() =>
+      buildFieldPatchOps({}, { "/fields/System.Title": "Hacked" }),
+    ).toThrow(/conflicts with a mapped field/);
+  });
+
+  it("throws when customField path does not match /fields/<name> format", () => {
+    expect(() =>
+      buildFieldPatchOps({}, { "/relations/-": "evil" }),
+    ).toThrow(/Invalid customField path/);
+  });
+
+  it("throws on malformed paths like bare field name", () => {
+    expect(() =>
+      buildFieldPatchOps({}, { "Custom.Sponsors": "Juan" }),
+    ).toThrow(/Invalid customField path/);
+  });
+
+  it("accepts valid custom field paths with dots and underscores", () => {
+    const ops = buildFieldPatchOps({}, {
+      "/fields/Custom.Sponsors": "Juan",
+      "/fields/Custom.USProducto": "yWhatsApp",
+      "/fields/Custom.My_Field": "value",
+    });
+    expect(ops).toHaveLength(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. AdoClient.createWorkItem with customFields (mocked fetch)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("AdoClient.createWorkItem with customFields", () => {
+  let client: AdoClient;
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    client = makeClient();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it("includes customFields in the JSON Patch body", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 55 }));
+
+    await client.createWorkItem("User Story", { title: "US" }, undefined, {
+      "/fields/Custom.Sponsors": "Juan",
+      "/fields/Custom.USProducto": "yWhatsApp",
+    });
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as Array<{ path: string; value: unknown }>;
+
+    expect(body.find((op) => op.path === "/fields/Custom.Sponsors")!.value).toBe("Juan");
+    expect(body.find((op) => op.path === "/fields/Custom.USProducto")!.value).toBe("yWhatsApp");
+  });
+
+  it("includes customFields alongside parent relation", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 56 }));
+
+    await client.createWorkItem("Task", { title: "Child" }, {
+      parentId: 10,
+      relationType: "System.LinkTypes.Hierarchy-Reverse",
+    }, {
+      "/fields/Custom.Extra": "value",
+    });
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as Array<{ path: string; value: unknown }>;
+
+    expect(body.find((op) => op.path === "/fields/Custom.Extra")!.value).toBe("value");
+    expect(body.find((op) => op.path === "/relations/-")).toBeDefined();
+  });
+
+  it("works without customFields (backwards compatible)", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 57 }));
+
+    await client.createWorkItem("Bug", { title: "Old-style call" });
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as Array<{ path: string }>;
+
+    // Should only have known fields, no custom paths
+    const hasCustom = body.some((op) => op.path.startsWith("/fields/Custom."));
+    expect(hasCustom).toBe(false);
   });
 });

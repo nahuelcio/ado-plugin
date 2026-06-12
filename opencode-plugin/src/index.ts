@@ -516,7 +516,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
       ado_create_work_item: {
         description: "Create a work item. Validates against project config rules (allowed types, required fields, parent requirement).",
         args: {
-          type: z.string().describe("Work item type (e.g. Task, User Story, Bug)"),
+          type: z.string().optional().describe("Work item type (e.g. Task, User Story, Bug). Defaults to config default_type."),
           title: z.string().describe("Work item title"),
           description: z.string().optional().describe("Work item description (Markdown)"),
           areaPath: z.string().optional().describe("Area path (e.g. 'Project\\Area')"),
@@ -526,6 +526,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           state: z.string().optional().describe("Initial state (default: from config or 'New')"),
           tags: z.string().optional().describe("Tags (semicolon-separated)"),
           parentId: z.number().optional().describe("Parent work item ID (creates hierarchy link)"),
+          customFields: z.record(z.string(), z.string()).optional().describe("Custom ADO fields as key-value pairs. Keys must be full ADO field paths (e.g. '/fields/Custom.Sponsors')"),
           profile: z.string().optional().describe("Profile override"),
         },
         async execute({
@@ -539,9 +540,10 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           state,
           tags,
           parentId,
+          customFields,
           profile,
         }: {
-          type: string;
+          type?: string;
           title: string;
           description?: string;
           areaPath?: string;
@@ -551,10 +553,14 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           state?: string;
           tags?: string;
           parentId?: number;
+          customFields?: Record<string, string>;
           profile?: string;
         }) {
           const { client: ado, userId } = await createClient(profile);
           const config = await loadProjectConfig(process.cwd());
+
+          // Resolve effective type: explicit arg > config default_type
+          const effectiveType = type ?? config.work_item.create.default_type;
 
           // Build fields object from args
           const fields: Record<string, unknown> = { title };
@@ -567,7 +573,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           if (tags !== undefined) fields.tags = tags;
 
           // Validate against project config rules
-          const validationError = validateWorkItemCreation(config, { type, fields, parentId });
+          const validationError = validateWorkItemCreation(config, { type: effectiveType, fields, parentId });
           if (validationError) return `Error: ${validationError}`;
 
           // Apply config defaults
@@ -585,7 +591,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
 
           let wi: any;
           try {
-            wi = await ado.createWorkItem(type, fields, parentRelation);
+            wi = await ado.createWorkItem(effectiveType, fields, parentRelation, customFields);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             return `Error creating work item: ${msg}`;
@@ -595,7 +601,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           const wiFields = wi.fields ?? {};
           const lines: string[] = [
             `## Work Item Created: #${wiId}`,
-            `- Type: ${wiFields["System.WorkItemType"] ?? type}`,
+            `- Type: ${wiFields["System.WorkItemType"] ?? effectiveType}`,
             `- Title: ${wiFields["System.Title"] ?? title}`,
             `- State: ${wiFields["System.State"] ?? fields.state}`,
           ];
@@ -620,7 +626,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         description: "Create a child work item under a parent. Convenience wrapper for ado_create_work_item with parentId required.",
         args: {
           parentId: z.number().describe("Parent work item ID"),
-          type: z.string().describe("Work item type (e.g. Task, Bug)"),
+          type: z.string().optional().describe("Work item type (e.g. Task, Bug). Defaults to config default_type."),
           title: z.string().describe("Work item title"),
           description: z.string().optional().describe("Description"),
           areaPath: z.string().optional().describe("Area path"),
@@ -629,6 +635,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           assignedTo: z.string().optional().describe("Assign to user"),
           state: z.string().optional().describe("Initial state"),
           tags: z.string().optional().describe("Tags (semicolon-separated)"),
+          customFields: z.record(z.string(), z.string()).optional().describe("Custom ADO fields as key-value pairs. Keys must be full ADO field paths (e.g. '/fields/Custom.Sponsors')"),
           profile: z.string().optional().describe("Profile override"),
         },
         async execute({
@@ -642,10 +649,11 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           assignedTo,
           state,
           tags,
+          customFields,
           profile,
         }: {
           parentId: number;
-          type: string;
+          type?: string;
           title: string;
           description?: string;
           areaPath?: string;
@@ -654,10 +662,14 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           assignedTo?: string;
           state?: string;
           tags?: string;
+          customFields?: Record<string, string>;
           profile?: string;
         }) {
           const { client: ado, userId } = await createClient(profile);
           const config = await loadProjectConfig(process.cwd());
+
+          // Resolve effective type: explicit arg > config default_type
+          const effectiveType = type ?? config.work_item.create.default_type;
 
           const fields: Record<string, unknown> = { title };
           if (description !== undefined) fields.description = description;
@@ -669,7 +681,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           if (tags !== undefined) fields.tags = tags;
 
           // Validate — parentId always present, so require_parent is satisfied
-          const validationError = validateWorkItemCreation(config, { type, fields, parentId });
+          const validationError = validateWorkItemCreation(config, { type: effectiveType, fields, parentId });
           if (validationError) return `Error: ${validationError}`;
 
           // Apply config defaults
@@ -684,7 +696,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
 
           let wi: any;
           try {
-            wi = await ado.createWorkItem(type, fields, parentRelation);
+            wi = await ado.createWorkItem(effectiveType, fields, parentRelation, customFields);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             return `Error creating child work item: ${msg}`;
@@ -694,7 +706,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           const wiFields = wi.fields ?? {};
           const lines: string[] = [
             `## Child Work Item Created: #${wiId}`,
-            `- Type: ${wiFields["System.WorkItemType"] ?? type}`,
+            `- Type: ${wiFields["System.WorkItemType"] ?? effectiveType}`,
             `- Title: ${wiFields["System.Title"] ?? title}`,
             `- State: ${wiFields["System.State"] ?? fields.state}`,
             `- Parent: #${parentId}`,

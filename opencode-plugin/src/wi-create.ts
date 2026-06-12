@@ -6,6 +6,9 @@
  * and map input fields to ADO JSON Patch operations.
  */
 
+/** Regex that valid custom field paths must match: /fields/<FieldName> */
+const FIELD_PATH_RE = /^\/fields\/[A-Za-z0-9_.]+$/;
+
 /** Mapping from input field keys to ADO API field paths. */
 const FIELD_MAP: Record<string, string> = {
   title: "/fields/System.Title",
@@ -23,15 +26,37 @@ const FIELD_MAP: Record<string, string> = {
  *
  * Only known fields are mapped; unknown keys are silently ignored.
  * All operations use "add" semantics.
+ *
+ * @param fields - Standard fields mapped via FIELD_MAP (title, description, etc.)
+ * @param customFields - Arbitrary ADO fields where keys are full ADO paths
+ *   (e.g. "/fields/Custom.Sponsors") and values are the field values.
+ *   These are appended as direct "add" patch operations.
  */
 export function buildFieldPatchOps(
   fields: Record<string, unknown>,
+  customFields?: Record<string, string>,
 ): Array<{ op: string; path: string; value: unknown }> {
   const ops: Array<{ op: string; path: string; value: unknown }> = [];
   for (const [key, value] of Object.entries(fields)) {
     const adoPath = FIELD_MAP[key];
     if (adoPath) {
       ops.push({ op: "add", path: adoPath, value });
+    }
+  }
+  if (customFields) {
+    const knownPaths = new Set(Object.values(FIELD_MAP));
+    for (const [path, value] of Object.entries(customFields)) {
+      if (!FIELD_PATH_RE.test(path)) {
+        throw new Error(
+          `Invalid customField path '${path}'. Must match /fields/<FieldName> (e.g. /fields/Custom.Sponsors).`,
+        );
+      }
+      if (knownPaths.has(path)) {
+        throw new Error(
+          `customField path '${path}' conflicts with a mapped field. Use the standard field argument instead.`,
+        );
+      }
+      ops.push({ op: "add", path, value });
     }
   }
   return ops;
@@ -53,6 +78,7 @@ export function validateWorkItemCreation(
         default_state: string;
         auto_assign: boolean;
         require_parent: boolean;
+        default_type: string;
       };
     };
   },

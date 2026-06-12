@@ -244,13 +244,17 @@ export class AdoClient {
    * Create a work item.
    * POST /_apis/wit/workitems/${type}?api-version=7.1
    * Content-Type: application/json-patch+json
+   *
+   * @param customFields - Arbitrary ADO fields as key-value pairs where keys are
+   *   full ADO field paths (e.g. "/fields/Custom.Sponsors").
    */
   async createWorkItem(
     type: string,
     fields: Record<string, unknown>,
     parentRelation?: { parentId: number; relationType: string },
+    customFields?: Record<string, string>,
   ): Promise<any> {
-    const patchOps = buildFieldPatchOps(fields);
+    const patchOps = buildFieldPatchOps(fields, customFields);
 
     if (parentRelation) {
       patchOps.push({
