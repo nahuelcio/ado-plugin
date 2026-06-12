@@ -68,6 +68,8 @@ interface SidebarData {
   collapsedStates: Record<string, boolean>;
   filters?: { state?: string; assignedTo?: string };
   error?: string;
+  lastSuccessTime?: Date;
+  isStale?: boolean;
 }
 
 // ─── Config reading ────────────────────────────────────────────────────────
@@ -529,7 +531,7 @@ function SidebarContentView(props: {
       </Match>
       <Match when={d().status === "error"}>
         <box gap={0}>
-          <text fg="red">ADO: {d().error ?? "Unknown error"}</text>
+          <text fg="red">{`ADO [${d().profileName}]: ${d().error ?? "Unknown error"}`}</text>
           <text fg="gray">{"cmd/ctrl+P → ADO: Refresh"}</text>
         </box>
       </Match>
@@ -556,6 +558,11 @@ function SidebarContentView(props: {
               return `${line} | cmd/ctrl+P → ADO: Switch View`;
             })()}
           </text>
+
+          {/* Stale data warning — shown when a refresh failed but previous data is preserved */}
+          {d().isStale && d().lastSuccessTime && (
+            <text fg="yellow">{`⚠ Stale data — last ok ${relativeTime(d().lastSuccessTime)}`}</text>
+          )}
 
           {/* Keyboard hints for WI/QA navigation */}
           {(d().sidebarView === "wis" || d().sidebarView === "qa") && (
@@ -1219,13 +1226,15 @@ export const tui: TuiPlugin = async (api: TuiPluginApi, options) => {
           focusIndex,
           collapsedStates: currentCollapsed,
           filters: currentFilters,
+          lastSuccessTime: new Date(),
+          isStale: false,
         });
       } catch (err) {
         if (!disposed) {
           // If filters were active, keep previous data to avoid blanking the sidebar
           const prev = data();
           if (prev.status === "ready" && prev.filters) {
-            setData((prevData) => ({ ...prevData, status: "ready" }));
+            setData((prevData) => ({ ...prevData, status: "ready", isStale: true }));
           } else {
             setData({
               status: "error",
