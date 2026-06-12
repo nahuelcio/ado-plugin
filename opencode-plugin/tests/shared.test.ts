@@ -8,6 +8,7 @@ import {
   resolveOrgUrl,
   asAdoConfig,
   resolveActiveProfile,
+  relativeTime,
 } from "../src/shared.js";
 
 describe("PAT validation", () => {
@@ -219,5 +220,51 @@ describe("Profile resolution", () => {
     };
     const result = resolveActiveProfile(noDefaults);
     expect(result.name).toBe("personal");
+  });
+});
+
+describe("relativeTime", () => {
+  it("returns 'just now' for dates under a minute ago", () => {
+    const now = new Date();
+    const d = new Date(now.getTime() - 30_000);
+    expect(relativeTime(d)).toBe("just now");
+  });
+
+  it("returns minutes ago", () => {
+    const d = new Date(Date.now() - 5 * 60 * 1000);
+    expect(relativeTime(d)).toBe("5m ago");
+  });
+
+  it("returns hours ago", () => {
+    const d = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    expect(relativeTime(d)).toBe("3h ago");
+  });
+
+  it("returns days ago", () => {
+    const d = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    expect(relativeTime(d)).toBe("10d ago");
+  });
+
+  it("returns months ago", () => {
+    const d = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    expect(relativeTime(d)).toBe("2mo ago");
+  });
+
+  it("returns years ago", () => {
+    const d = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+    expect(relativeTime(d)).toBe("1y ago");
+  });
+
+  it("handles string dates", () => {
+    const d = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    expect(relativeTime(d.toISOString())).toBe("2h ago");
+  });
+
+  it("handles invalid date strings defensively", () => {
+    expect(relativeTime("not-a-date")).toBe("not-a-date");
+  });
+
+  it("handles undefined", () => {
+    expect(relativeTime(undefined)).toBe("");
   });
 });

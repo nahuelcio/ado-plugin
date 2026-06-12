@@ -304,6 +304,34 @@ function formatReproSteps(repro: any): string | null {
   return compact ? `\nrepro: ${compact}${text.length > 300 ? "..." : ""}` : null;
 }
 
+/**
+ * Return a human-readable relative time string for a date.
+ * Handles invalid/missing dates defensively.
+ */
+export function relativeTime(date: Date | string | undefined): string {
+  if (!date) return "";
+  let d: Date;
+  if (date instanceof Date) {
+    d = date;
+  } else {
+    d = new Date(date);
+  }
+  if (isNaN(d.getTime())) return typeof date === "string" ? date : "";
+  const diffMs = Date.now() - d.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  const diffMonth = Math.floor(diffDay / 30);
+  if (diffMonth < 12) return `${diffMonth}mo ago`;
+  const diffYear = Math.floor(diffMonth / 12);
+  return `${diffYear}y ago`;
+}
+
 // ─── Reusable Zod schemas for MCP tools ────────────────────────────────────────
 
 import { z } from "zod/v4";

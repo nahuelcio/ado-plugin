@@ -30,6 +30,7 @@ import {
   getPATOptional,
   shortBranch,
   reviewerMatchesUser,
+  relativeTime,
 } from "./shared.js";
 
 // Persistence stores (ESM — import from .js)
