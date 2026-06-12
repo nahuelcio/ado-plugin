@@ -175,4 +175,13 @@ describe("package metadata", () => {
     // Must open string context only on double-quote
     expect(cliSource).toContain(`if (char === '"') {`);
   });
+
+  it("includes syncSelectionFromStore, stale indicator, workItemsTruncated, and contextual header", () => {
+    expect(tuiSource).toContain("syncSelectionFromStore");
+    expect(tuiSource).toContain("isStale");
+    expect(tuiSource).toContain("workItemsTruncated");
+    expect(tuiSource).toContain("── Selected QA Feedback ──");
+    expect(tuiSource).toContain("connectionDataCache");
+    expect(tuiSource).toContain("relativeTime");
+  });
 });
