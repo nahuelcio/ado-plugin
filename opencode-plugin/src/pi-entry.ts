@@ -208,8 +208,8 @@ export default function adoExtension(pi: ExtensionAPI) {
       prId: S.prId,
       profile: S.profile,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const config = getConfig();
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const config = getConfig(ctx.cwd);
       const resolved = await resolvePrArgsAuto(config, params);
       const { client: ado, name } = await createClient(resolved.profileName);
       const pr = await ado.getPullRequest(resolved.repo, resolved.prId);
@@ -229,8 +229,8 @@ export default function adoExtension(pi: ExtensionAPI) {
       prId: S.prId,
       profile: S.profile,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const config = getConfig();
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const config = getConfig(ctx.cwd);
       const resolved = await resolvePrArgsAuto(config, params);
       const { client: ado } = await createClient(resolved.profileName);
       const threads = await ado.getThreads(resolved.repo, resolved.prId);
@@ -254,11 +254,11 @@ export default function adoExtension(pi: ExtensionAPI) {
       line: S.line,
       profile: S.profile,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (params.line !== undefined && !params.filePath) {
         return { content: [{ type: "text", text: "Provide filePath when specifying line." }], isError: true, details: {} };
       }
-      const config = getConfig();
+      const config = getConfig(ctx.cwd);
       const resolved = await resolvePrArgsAuto(config, params);
       const { client: ado } = await createClient(resolved.profileName);
       await ado.createThread(resolved.repo, resolved.prId, params.comment, { filePath: params.filePath, line: params.line });
@@ -281,8 +281,8 @@ export default function adoExtension(pi: ExtensionAPI) {
       comment: Type.Optional(S.comment),
       profile: S.profile,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const config = getConfig();
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const config = getConfig(ctx.cwd);
       const resolved = await resolvePrArgsAuto(config, params);
       const { client: ado, userId } = await createClient(resolved.profileName);
       const voteMap: Record<string, number> = { approve: 10, suggestions: 5, wait: -5, reject: -10 };
@@ -319,8 +319,8 @@ export default function adoExtension(pi: ExtensionAPI) {
     label: "ADO Profiles",
     description: "List available profiles",
     parameters: Type.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
-      const config = getConfig();
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      const config = getConfig(ctx.cwd);
       const active = getActiveProfile();
       const lines = ["## Profiles"];
       for (const [name, p] of Object.entries(config.profiles)) {
@@ -341,7 +341,7 @@ export default function adoExtension(pi: ExtensionAPI) {
       name: Type.String({ description: "Profile name" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const config = getConfig();
+      const config = getConfig(ctx.cwd);
       if (!config.profiles[params.name]) {
         return { content: [{ type: "text", text: `Profile "${params.name}" not found. Available: ${Object.keys(config.profiles).join(", ")}` }], isError: true, details: {} };
       }
@@ -362,10 +362,10 @@ export default function adoExtension(pi: ExtensionAPI) {
       prId: Type.Number({ description: "PR ID" }),
       profile: S.profile,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       let resolvedRepo = params.repo;
       if (!resolvedRepo) {
-        const config = getConfig();
+        const config = getConfig(ctx.cwd);
         const found = await findPrAcrossProfiles(config, params.prId, params.profile);
         if (!found) {
           return { content: [{ type: "text", text: `PR #${params.prId} not found. Provide a repo or check the PR ID.` }], isError: true, details: {} };
@@ -389,8 +389,8 @@ export default function adoExtension(pi: ExtensionAPI) {
       prId: S.prId,
       profile: S.profile,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const config = getConfig();
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const config = getConfig(ctx.cwd);
       const resolved = await resolvePrArgsAuto(config, params);
       const { client: ado, name } = await createClient(resolved.profileName);
 
@@ -423,8 +423,8 @@ export default function adoExtension(pi: ExtensionAPI) {
       endLine: Type.Optional(Type.Number({ description: "End line (1-based)" })),
       profile: S.profile,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const config = getConfig();
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const config = getConfig(ctx.cwd);
       const resolved = await resolvePrArgsAuto(config, params);
       const { client: ado } = await createClient(resolved.profileName);
 
@@ -469,8 +469,8 @@ export default function adoExtension(pi: ExtensionAPI) {
       prId: S.prId,
       profile: S.profile,
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const config = getConfig();
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const config = getConfig(ctx.cwd);
       const resolved = await resolvePrArgsAuto(config, params);
       const { client: ado, name } = await createClient(resolved.profileName);
 

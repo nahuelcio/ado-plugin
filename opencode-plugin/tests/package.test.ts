@@ -89,6 +89,13 @@ describe("package metadata", () => {
     expect(serverSource).toContain("Provide filePath when specifying line.");
   });
 
+  it("pi-entry tool executors pass ctx.cwd to getConfig (no bare getConfig() calls)", () => {
+    // The commands section (registerCommand) legitimately calls getConfig(ctx.cwd) — that's fine.
+    // What must NOT exist is a bare getConfig() call inside a registerTool execute block.
+    // We verify by checking the whole file has no standalone getConfig() without an argument.
+    expect(piSource).not.toContain("getConfig()");
+  });
+
   it("supports generic work item tools with explicit workItemType filtering", () => {
     expect(serverSource).toContain("ado_work_items");
     expect(serverSource).toContain("workItemType");
