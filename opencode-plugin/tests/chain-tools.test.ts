@@ -115,6 +115,7 @@ async function simulateChainCreation(params: {
     strategy,
     steps: [],
     created: 0,
+    branchesCreated: 0,
     linked: 0,
     errors: [],
   };
@@ -179,6 +180,7 @@ async function simulateChainCreation(params: {
     // Create branch
     try {
       await ado.createBranch(repo, branchName, baseTip);
+      result.branchesCreated++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       step.error = `Branch creation failed: ${msg}`;
@@ -1449,6 +1451,7 @@ describe("edge cases", () => {
       strategy: "stacked",
       steps: [],
       created: 0,
+      branchesCreated: 0,
       linked: 0,
       errors: [],
     };
@@ -1475,6 +1478,7 @@ describe("edge cases", () => {
         },
       ],
       created: 0,
+      branchesCreated: 0,
       linked: 0,
       errors: ["WI #123 (feature/123-auth-schema): Branch creation failed: already exists"],
     };

@@ -172,7 +172,7 @@ export function formatChainResult(result: ChainResult): string {
 
   lines.push("");
   lines.push("### Summary");
-  lines.push(`${result.created} branches created, ${result.created} PRs created, ${result.linked} WIs linked, ${result.errors.length} errors`);
+  lines.push(`${result.branchesCreated} branches created, ${result.created} PRs created, ${result.linked} WIs linked, ${result.errors.length} errors`);
 
   return lines.join("\n");
 }

@@ -69,7 +69,10 @@ export interface ChainResult {
     targetBranch?: string;
   };
   steps: ChainStep[];
+  /** Number of PRs successfully created. */
   created: number;
+  /** Number of branches successfully created. */
+  branchesCreated: number;
   linked: number;
   errors: string[];
 }

@@ -298,6 +298,7 @@ describe("formatChainResult", () => {
         },
       ],
       created: 2,
+      branchesCreated: 2,
       linked: 2,
       errors: [],
     };
@@ -340,6 +341,7 @@ describe("formatChainResult", () => {
         },
       ],
       created: 2,
+      branchesCreated: 2,
       linked: 1,
       errors: ["WI #124 link failed: Work item not found"],
     };
@@ -366,6 +368,7 @@ describe("formatChainResult", () => {
         },
       ],
       created: 1,
+      branchesCreated: 1,
       linked: 1,
       errors: [],
     };
@@ -385,6 +388,7 @@ describe("formatChainResult", () => {
       },
       steps: [],
       created: 0,
+      branchesCreated: 0,
       linked: 0,
       errors: [],
     };
@@ -393,6 +397,34 @@ describe("formatChainResult", () => {
     expect(output).toContain("### Tracker");
     expect(output).toContain("feature/auth-tracker");
     expect(output).toContain("#100 (draft)");
+  });
+
+  it("reports real branch count separately from PR count in summary", () => {
+    // Branch created but PR creation failed: branchesCreated=1, created=0
+    const result: ChainResult = {
+      strategy: "stacked",
+      steps: [
+        {
+          workItemId: 200,
+          workItemTitle: "Auth Schema",
+          branchName: "feature/200-auth-schema",
+          refName: "refs/heads/feature/200-auth-schema",
+          parentRefName: "refs/heads/main",
+          linked: false,
+          error: "PR creation failed: timeout",
+        },
+      ],
+      created: 0,
+      branchesCreated: 1,
+      linked: 0,
+      errors: ["PR creation failed: timeout"],
+    };
+
+    const output = formatChainResult(result);
+    expect(output).toContain("1 branches created");
+    expect(output).toContain("0 PRs created");
+    // Must NOT report "0 branches created, 0 PRs created" (the old bug)
+    expect(output).not.toContain("0 branches created, 0 PRs created");
   });
 
   it("shows 'no PR' for steps without a PR", () => {
@@ -410,6 +442,7 @@ describe("formatChainResult", () => {
         },
       ],
       created: 0,
+      branchesCreated: 0,
       linked: 0,
       errors: ["Branch creation failed"],
     };

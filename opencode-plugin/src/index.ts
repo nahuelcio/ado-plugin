@@ -964,6 +964,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
             strategy: effectiveStrategy,
             steps: [],
             created: 0,
+            branchesCreated: 0,
             linked: 0,
             errors: [],
           };
@@ -1039,6 +1040,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
             } catch {
               // Branch doesn't exist — create it
               await ado.createBranch(repo, branchName, baseTip);
+              result.branchesCreated++;
             }
 
             // Determine PR target — find last successful branch for feature-chain
