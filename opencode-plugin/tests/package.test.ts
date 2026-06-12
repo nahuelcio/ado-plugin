@@ -9,6 +9,8 @@ describe("package metadata", () => {
   const piSource = readFileSync(new URL("../src/pi-entry.ts", import.meta.url), "utf-8");
   const sharedSource = readFileSync(new URL("../src/shared.ts", import.meta.url), "utf-8");
   const adoClientSource = readFileSync(new URL("../src/ado-client.ts", import.meta.url), "utf-8");
+  // tool-descriptions.ts is the single source of truth for all tool names and descriptions
+  const toolDescSource = readFileSync(new URL("../src/tool-descriptions.ts", import.meta.url), "utf-8");
 
   it("publishes the TUI source expected by OpenCode", () => {
     expect(pkg.exports["./tui"].default).toBe("./dist/tui.tsx");
@@ -83,10 +85,38 @@ describe("package metadata", () => {
   });
 
   it("supports standalone PR comments including optional file/line context", () => {
-    expect(serverSource).toContain("ado_pr_comment");
+    expect(toolDescSource).toContain("ado_pr_comment"); // tool name in descriptions
     expect(serverSource).toContain("filePath");
     expect(adoClientSource).toContain("rightFileStart");
     expect(serverSource).toContain("Provide filePath when specifying line.");
+  });
+
+  it("uses new ado_<resource>_<verb> naming scheme for all renamed tools", () => {
+    // All tool names are defined in tool-descriptions.ts (single source of truth)
+    // PR tools
+    expect(toolDescSource).toContain("ado_pr_list");
+    expect(toolDescSource).toContain("ado_pr_get");
+    expect(toolDescSource).toContain("ado_pr_vote");
+    expect(toolDescSource).toContain("ado_pr_select");
+    expect(toolDescSource).toContain("ado_pr_context");
+    expect(toolDescSource).toContain("ado_pr_create");
+    expect(toolDescSource).toContain("ado_pr_chain");
+    // WI tools
+    expect(toolDescSource).toContain("ado_wi_list");
+    expect(toolDescSource).toContain("ado_wi_get");
+    expect(toolDescSource).toContain("ado_wi_update");
+    expect(toolDescSource).toContain("ado_wi_comment");
+    expect(toolDescSource).toContain("ado_wi_types");
+    expect(toolDescSource).toContain("ado_wi_create");
+    expect(toolDescSource).toContain("ado_wi_create_child");
+    expect(toolDescSource).toContain("ado_wi_related");
+    // Profile tools
+    expect(toolDescSource).toContain("ado_profile_get");
+    expect(toolDescSource).toContain("ado_profile_list");
+    // pi-entry registers tools using D.*.name references
+    expect(piSource).toContain("D.pr_list.name");
+    expect(piSource).toContain("D.wi_list.name");
+    expect(piSource).toContain("D.wi_related.name");
   });
 
   it("pi-entry tool executors pass ctx.cwd to getConfig (no bare getConfig() calls)", () => {
@@ -97,7 +127,7 @@ describe("package metadata", () => {
   });
 
   it("supports generic work item tools with explicit workItemType filtering", () => {
-    expect(serverSource).toContain("ado_work_items");
+    expect(toolDescSource).toContain("ado_wi_list");
     expect(serverSource).toContain("workItemType");
     expect(serverSource).toContain("[System.WorkItemType] CONTAINS");
     expect(serverSource).not.toContain("[System.WorkItemType] LIKE");
@@ -124,7 +154,7 @@ describe("package metadata", () => {
   });
 
   it("supports full related work item bundles for a parent work item", () => {
-    expect(serverSource).toContain("ado_related_work_items");
+    expect(toolDescSource).toContain("ado_wi_related");
     expect(serverSource).toContain("## Related for #");
     expect(adoClientSource).toContain("formatWorkItemFullDetail");
     expect(adoClientSource).toContain("formatComments");

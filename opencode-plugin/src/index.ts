@@ -56,6 +56,7 @@ import { loadProjectConfig } from "./chain-config.js";
 import { type GitPullRequest } from "./chain-types.js";
 import { validateWorkItemCreation } from "./wi-create.js";
 import { runCreatePr, runChainPrs } from "./chain-runner.js";
+import { D } from "./tool-descriptions.js";
 
 // All business logic (AdoClient + helpers) is now in ./ado-client.js
 // This file only contains OpenCode-specific tool registration and config loading.
@@ -86,26 +87,11 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
 
   // ─── Tools ───────────────────────────────────────────────────────
 
-  const adoSchemas = {
-    repo: z.string().optional().describe("Repo (omit to auto-discover by PR ID)"),
-    prId: z.number().optional().describe("PR ID (auto-discovers across profiles when repo is omitted)"),
-    profile: z.string().optional().describe("Profile override"),
-    filePath: z.string().optional().describe("File path e.g. /src/app.ts"),
-    line: z.number().optional().describe("1-based line number"),
-    vote: z.enum(["approve", "reject", "wait", "suggestions"]).describe("Vote"),
-    comment: z.string().describe("Comment text"),
-    wiId: z.number().describe("Work item ID"),
-    wiState: z.string().optional().describe("State filter (e.g. Active, New)"),
-    wiAssignedTo: z.string().optional().describe("Assigned user (default: @Me)"),
-    wiTag: z.string().optional().describe("Tag filter"),
-    wiType: z.string().optional().describe("Type filter (partial match, e.g. 'QA Feedback' matches 'QA Feedback · Bug')"),
-  };
-
   return {
     tool: {
-      ado_prs: {
-        description: "List active PRs: pending reviews + your own",
-        args: { profile: adoSchemas.profile },
+      [D.pr_list.name]: {
+        description: D.pr_list.description,
+        args: { profile: z.string().optional().describe(D.pr_list.params.profile) },
         async execute({ profile }: { profile?: string }) {
           const { client: ado, profile: prof, name, userId } = await createClient(profile);
           const allPRs: any[] = [];
@@ -130,12 +116,12 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_pr: {
-        description: "PR details. Auto-discovers by PR ID across profiles",
+      [D.pr_get.name]: {
+        description: D.pr_get.description,
         args: {
-          repo: adoSchemas.repo,
-          prId: adoSchemas.prId,
-          profile: adoSchemas.profile,
+          repo: z.string().optional().describe(D.pr_get.params.repo),
+          prId: z.number().optional().describe(D.pr_get.params.prId),
+          profile: z.string().optional().describe(D.pr_get.params.profile),
         },
         async execute({ repo, prId, profile }: { repo?: string; prId?: number; profile?: string }) {
           const config = await loadConfig();
@@ -146,12 +132,12 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_pr_threads: {
-        description: "Show PR comment threads. Auto-discovers by PR ID across profiles",
+      [D.pr_threads.name]: {
+        description: D.pr_threads.description,
         args: {
-          repo: adoSchemas.repo,
-          prId: adoSchemas.prId,
-          profile: adoSchemas.profile,
+          repo: z.string().optional().describe(D.pr_threads.params.repo),
+          prId: z.number().optional().describe(D.pr_threads.params.prId),
+          profile: z.string().optional().describe(D.pr_threads.params.profile),
         },
         async execute({ repo, prId, profile }: { repo?: string; prId?: number; profile?: string }) {
           const config = await loadConfig();
@@ -163,15 +149,15 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_pr_comment: {
-        description: "Add PR comment. Optional file/line attachment",
+      [D.pr_comment.name]: {
+        description: D.pr_comment.description,
         args: {
-          repo: adoSchemas.repo,
-          prId: adoSchemas.prId,
-          comment: adoSchemas.comment,
-          filePath: adoSchemas.filePath,
-          line: adoSchemas.line,
-          profile: adoSchemas.profile,
+          repo: z.string().optional().describe(D.pr_comment.params.repo),
+          prId: z.number().optional().describe(D.pr_comment.params.prId),
+          comment: z.string().describe(D.pr_comment.params.comment),
+          filePath: z.string().optional().describe(D.pr_comment.params.filePath),
+          line: z.number().optional().describe(D.pr_comment.params.line),
+          profile: z.string().optional().describe(D.pr_comment.params.profile),
         },
         async execute({ repo, prId, comment, filePath, line, profile }: { repo?: string; prId?: number; comment: string; filePath?: string; line?: number; profile?: string }) {
           if (line !== undefined && !filePath) return "Provide filePath when specifying line.";
@@ -184,14 +170,14 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_review: {
-        description: "Vote on PR: approve, reject, wait, or suggestions",
+      [D.pr_vote.name]: {
+        description: D.pr_vote.description,
         args: {
-          repo: adoSchemas.repo,
-          prId: adoSchemas.prId,
-          vote: adoSchemas.vote,
-          comment: adoSchemas.comment.optional(),
-          profile: adoSchemas.profile,
+          repo: z.string().optional().describe(D.pr_vote.params.repo),
+          prId: z.number().optional().describe(D.pr_vote.params.prId),
+          vote: z.enum(["approve", "reject", "wait", "suggestions"]).describe(D.pr_vote.params.vote),
+          comment: z.string().optional().describe(D.pr_vote.params.comment),
+          profile: z.string().optional().describe(D.pr_vote.params.profile),
         },
         async execute({ repo, prId, vote: voteStr, comment, profile }: { repo?: string; prId?: number; vote: string; comment?: string; profile?: string }) {
           const config = await loadConfig();
@@ -209,19 +195,19 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_profile: {
-        description: "Show active profile config",
-        args: { profile: adoSchemas.profile },
+      [D.profile_get.name]: {
+        description: D.profile_get.description,
+        args: { profile: z.string().optional().describe(D.profile_get.params.profile) },
         async execute({ profile }: { profile?: string }) {
           const { profile: prof, name } = await createClient(profile);
           return `## Profile: ${name}\n${prof.org}/${prof.project}\nrepos: ${prof.repos.join(", ")}\npat: ${prof.patEnvVar}`;
         },
       },
 
-      // ─── New tools: profiles ────────────────────────────────────
+      // ─── Profiles ────────────────────────────────────────────────
 
-      ado_profiles: {
-        description: "List available profiles",
+      [D.profile_list.name]: {
+        description: D.profile_list.description,
         args: {},
         async execute() {
           const config = await loadConfig();
@@ -235,9 +221,9 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_profile_use: {
-        description: "Switch active profile (persists)",
-        args: { name: z.string().describe("Profile name") },
+      [D.profile_use.name]: {
+        description: D.profile_use.description,
+        args: { name: z.string().describe(D.profile_use.params.name) },
         async execute({ name }: { name: string }) {
           const config = await loadConfig();
           if (!config.profiles[name]) {
@@ -248,14 +234,14 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      // ─── New tools: selection ──────────────────────────────────────
+      // ─── PR selection ─────────────────────────────────────────────
 
-      ado_select_pr: {
-        description: "Select PR in sidebar (persists). Auto-discovers repo when only prId is provided.",
+      [D.pr_select.name]: {
+        description: D.pr_select.description,
         args: {
-          repo: z.string().optional().describe("Repository name (omit to auto-discover)"),
-          prId: z.number().describe("PR ID"),
-          profile: adoSchemas.profile,
+          repo: z.string().optional().describe(D.pr_select.params.repo),
+          prId: z.number().describe(D.pr_select.params.prId),
+          profile: z.string().optional().describe(D.pr_select.params.profile),
         },
         async execute({ repo, prId, profile }: { repo?: string; prId: number; profile?: string }) {
           let resolvedRepo = repo;
@@ -276,14 +262,14 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      // ─── New tools: diff & review context ──────────────────────
+      // ─── PR diff & file content ───────────────────────────────────
 
-      ado_pr_diff: {
-        description: "List changed files in PR. Auto-discovers by PR ID across profiles",
+      [D.pr_diff.name]: {
+        description: D.pr_diff.description,
         args: {
-          repo: adoSchemas.repo,
-          prId: adoSchemas.prId,
-          profile: adoSchemas.profile,
+          repo: z.string().optional().describe(D.pr_diff.params.repo),
+          prId: z.number().optional().describe(D.pr_diff.params.prId),
+          profile: z.string().optional().describe(D.pr_diff.params.profile),
         },
         async execute({ repo, prId, profile }: { repo?: string; prId?: number; profile?: string }) {
           const config = await loadConfig();
@@ -306,17 +292,15 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      // ─── New tools: file content ───────────────────────────────────
-
-      ado_pr_file: {
-        description: "Get file content from PR branch. Optional line range",
+      [D.pr_file.name]: {
+        description: D.pr_file.description,
         args: {
-          path: z.string().describe("File path e.g. /src/app.ts"),
-          repo: adoSchemas.repo,
-          prId: adoSchemas.prId,
-          startLine: z.number().optional().describe("Start line (1-based)"),
-          endLine: z.number().optional().describe("End line (1-based)"),
-          profile: adoSchemas.profile,
+          path: z.string().describe(D.pr_file.params.path),
+          repo: z.string().optional().describe(D.pr_file.params.repo),
+          prId: z.number().optional().describe(D.pr_file.params.prId),
+          startLine: z.number().optional().describe(D.pr_file.params.startLine),
+          endLine: z.number().optional().describe(D.pr_file.params.endLine),
+          profile: z.string().optional().describe(D.pr_file.params.profile),
         },
         async execute({ path, repo, prId, startLine, endLine, profile }: { path: string; repo?: string; prId?: number; startLine?: number; endLine?: number; profile?: string }) {
           const config = await loadConfig();
@@ -353,14 +337,12 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      // ─── New tools: review context ─────────────────────────────────
-
-      ado_pr_review_context: {
-        description: "Full PR review bundle: metadata, threads, files, commits",
+      [D.pr_context.name]: {
+        description: D.pr_context.description,
         args: {
-          repo: adoSchemas.repo,
-          prId: adoSchemas.prId,
-          profile: adoSchemas.profile,
+          repo: z.string().optional().describe(D.pr_context.params.repo),
+          prId: z.number().optional().describe(D.pr_context.params.prId),
+          profile: z.string().optional().describe(D.pr_context.params.profile),
         },
         async execute({ repo, prId, profile }: { repo?: string; prId?: number; profile?: string }) {
           const config = await loadConfig();
@@ -410,7 +392,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           }
 
           if (out.length > MAX_TOTAL) {
-            out = out.slice(0, MAX_TOTAL) + "\n⚠ Truncated. Use ado_pr_diff or ado_pr_threads for details.";
+            out = out.slice(0, MAX_TOTAL) + "\n⚠ Truncated. Use ado_pr_diff or ado_pr_context for details.";
           }
 
           return out;
@@ -419,14 +401,14 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
 
       // ─── Work Item tools ──────────────────────────────────────────────
 
-      ado_work_items: {
-        description: "List work items. Filter: state, assignedTo, tag, type. Type matching is partial (e.g. 'QA Feedback' matches 'QA Feedback · Bug')",
+      [D.wi_list.name]: {
+        description: D.wi_list.description,
         args: {
-          state: adoSchemas.wiState,
-          assignedTo: adoSchemas.wiAssignedTo,
-          tag: adoSchemas.wiTag,
-          workItemType: adoSchemas.wiType,
-          profile: adoSchemas.profile,
+          state: z.string().optional().describe(D.wi_list.params.state),
+          assignedTo: z.string().optional().describe(D.wi_list.params.assignedTo),
+          tag: z.string().optional().describe(D.wi_list.params.tag),
+          workItemType: z.string().optional().describe(D.wi_list.params.workItemType),
+          profile: z.string().optional().describe(D.wi_list.params.profile),
         },
         async execute({ state, assignedTo, tag, workItemType, profile }: { state?: string; assignedTo?: string; tag?: string; workItemType?: string; profile?: string }) {
           const { client: ado, name } = await createClient(profile);
@@ -452,11 +434,11 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_work_item: {
-        description: "Show work item details and comments",
+      [D.wi_get.name]: {
+        description: D.wi_get.description,
         args: {
-          id: adoSchemas.wiId,
-          profile: adoSchemas.profile,
+          id: z.number().describe(D.wi_get.params.id),
+          profile: z.string().optional().describe(D.wi_get.params.profile),
         },
         async execute({ id, profile }: { id: number; profile?: string }) {
           const { client: ado, name } = await createClient(profile);
@@ -465,14 +447,14 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_work_item_update: {
-        description: "Update work item: state, priority, or add comment",
+      [D.wi_update.name]: {
+        description: D.wi_update.description,
         args: {
-          id: adoSchemas.wiId,
-          state: z.string().optional().describe("New state (e.g. Active, Closed)"),
-          priority: z.number().optional().describe("New priority"),
-          comment: adoSchemas.comment.optional(),
-          profile: adoSchemas.profile,
+          id: z.number().describe(D.wi_update.params.id),
+          state: z.string().optional().describe(D.wi_update.params.state),
+          priority: z.number().optional(),
+          comment: z.string().optional().describe(D.wi_update.params.comment),
+          profile: z.string().optional().describe(D.wi_update.params.profile),
         },
         async execute({ id, state, priority, comment, profile }: { id: number; state?: string; priority?: number; comment?: string; profile?: string }) {
           const { client: ado } = await createClient(profile);
@@ -487,12 +469,12 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_work_item_comment: {
-        description: "Add comment to work item",
+      [D.wi_comment.name]: {
+        description: D.wi_comment.description,
         args: {
-          id: adoSchemas.wiId,
-          comment: adoSchemas.comment,
-          profile: adoSchemas.profile,
+          id: z.number().describe(D.wi_comment.params.id),
+          comment: z.string().describe(D.wi_comment.params.comment),
+          profile: z.string().optional().describe(D.wi_comment.params.profile),
         },
         async execute({ id, comment, profile }: { id: number; comment: string; profile?: string }) {
           const { client: ado } = await createClient(profile);
@@ -501,9 +483,9 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_work_item_types: {
-        description: "List work item types (discover custom types)",
-        args: { profile: adoSchemas.profile },
+      [D.wi_types.name]: {
+        description: D.wi_types.description,
+        args: { profile: z.string().optional().describe(D.wi_types.params.profile) },
         async execute({ profile }: { profile?: string }) {
           const { client: ado, name } = await createClient(profile);
           const types = await ado.getWorkItemTypes();
@@ -512,21 +494,21 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_create_work_item: {
-        description: "Create a work item. Validates against project config rules (allowed types, required fields, parent requirement).",
+      [D.wi_create.name]: {
+        description: D.wi_create.description,
         args: {
-          type: z.string().optional().describe("Work item type (e.g. Task, User Story, Bug). Defaults to config default_type."),
-          title: z.string().describe("Work item title"),
-          description: z.string().optional().describe("Work item description (Markdown)"),
-          areaPath: z.string().optional().describe("Area path (e.g. 'Project\\Area')"),
-          iterationPath: z.string().optional().describe("Iteration/sprint path"),
-          priority: z.number().optional().describe("Priority (1-4)"),
-          assignedTo: z.string().optional().describe("Assign to user (email or display name)"),
-          state: z.string().optional().describe("Initial state (default: from config or 'New')"),
-          tags: z.string().optional().describe("Tags (semicolon-separated)"),
-          parentId: z.number().optional().describe("Parent work item ID (creates hierarchy link)"),
-          customFields: z.record(z.string(), z.string()).optional().describe("Custom ADO fields as key-value pairs. Keys must be full ADO field paths (e.g. '/fields/Custom.Sponsors')"),
-          profile: z.string().optional().describe("Profile override"),
+          type: z.string().optional().describe(D.wi_create.params.type),
+          title: z.string().describe(D.wi_create.params.title),
+          description: z.string().optional().describe(D.wi_create.params.description),
+          areaPath: z.string().optional().describe(D.wi_create.params.areaPath),
+          iterationPath: z.string().optional().describe(D.wi_create.params.iterationPath),
+          priority: z.number().optional(),
+          assignedTo: z.string().optional().describe(D.wi_create.params.assignedTo),
+          state: z.string().optional().describe(D.wi_create.params.state),
+          tags: z.string().optional().describe(D.wi_create.params.tags),
+          parentId: z.number().optional().describe(D.wi_create.params.parentId),
+          customFields: z.record(z.string(), z.string()).optional().describe(D.wi_create.params.customFields),
+          profile: z.string().optional().describe(D.wi_create.params.profile),
         },
         async execute({
           type,
@@ -621,21 +603,21 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_create_child_work_item: {
-        description: "Create a child work item under a parent. Convenience wrapper for ado_create_work_item with parentId required.",
+      [D.wi_create_child.name]: {
+        description: D.wi_create_child.description,
         args: {
-          parentId: z.number().describe("Parent work item ID"),
-          type: z.string().optional().describe("Work item type (e.g. Task, Bug). Defaults to config default_type."),
-          title: z.string().describe("Work item title"),
-          description: z.string().optional().describe("Description"),
-          areaPath: z.string().optional().describe("Area path"),
-          iterationPath: z.string().optional().describe("Iteration/sprint path"),
-          priority: z.number().optional().describe("Priority (1-4)"),
-          assignedTo: z.string().optional().describe("Assign to user"),
-          state: z.string().optional().describe("Initial state"),
-          tags: z.string().optional().describe("Tags (semicolon-separated)"),
-          customFields: z.record(z.string(), z.string()).optional().describe("Custom ADO fields as key-value pairs. Keys must be full ADO field paths (e.g. '/fields/Custom.Sponsors')"),
-          profile: z.string().optional().describe("Profile override"),
+          parentId: z.number().describe(D.wi_create_child.params.parentId),
+          type: z.string().optional().describe(D.wi_create_child.params.type),
+          title: z.string().describe(D.wi_create_child.params.title),
+          description: z.string().optional().describe(D.wi_create_child.params.description),
+          areaPath: z.string().optional().describe(D.wi_create_child.params.areaPath),
+          iterationPath: z.string().optional().describe(D.wi_create_child.params.iterationPath),
+          priority: z.number().optional(),
+          assignedTo: z.string().optional().describe(D.wi_create_child.params.assignedTo),
+          state: z.string().optional().describe(D.wi_create_child.params.state),
+          tags: z.string().optional().describe(D.wi_create_child.params.tags),
+          customFields: z.record(z.string(), z.string()).optional().describe(D.wi_create_child.params.customFields),
+          profile: z.string().optional().describe(D.wi_create_child.params.profile),
         },
         async execute({
           parentId,
@@ -724,13 +706,13 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_related_work_items: {
-        description: "List related work items with summary + details",
+      [D.wi_related.name]: {
+        description: D.wi_related.description,
         args: {
-          id: adoSchemas.wiId,
-          state: adoSchemas.wiState,
-          workItemType: adoSchemas.wiType,
-          profile: adoSchemas.profile,
+          id: z.number().describe(D.wi_related.params.id),
+          state: z.string().optional().describe(D.wi_related.params.state),
+          workItemType: z.string().optional().describe(D.wi_related.params.workItemType),
+          profile: z.string().optional().describe(D.wi_related.params.profile),
         },
         async execute({ id, state, workItemType, profile }: { id: number; state?: string; workItemType?: string; profile?: string }) {
           const { client: ado, name } = await createClient(profile);
@@ -780,17 +762,17 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
 
       // ─── Chained PRs tools ─────────────────────────────────────────────
 
-      ado_create_pr: {
-        description: "Create a single PR with optional work item linking and auto-transition",
+      [D.pr_create.name]: {
+        description: D.pr_create.description,
         args: {
-          repo: z.string().describe("Repository name"),
-          sourceBranch: z.string().describe("Source branch name (without refs/heads/ prefix)"),
-          targetBranch: z.string().describe("Target branch name (without refs/heads/ prefix)"),
-          title: z.string().describe("PR title"),
-          description: z.string().optional().describe("PR description (Markdown)"),
-          workItemIds: z.array(z.number()).optional().describe("Work item IDs to link to this PR"),
-          isDraft: z.boolean().optional().describe("Create as draft"),
-          profile: z.string().optional().describe("Profile override"),
+          repo: z.string().describe(D.pr_create.params.repo),
+          sourceBranch: z.string().describe(D.pr_create.params.sourceBranch),
+          targetBranch: z.string().describe(D.pr_create.params.targetBranch),
+          title: z.string().describe(D.pr_create.params.title),
+          description: z.string().optional().describe(D.pr_create.params.description),
+          workItemIds: z.array(z.number()).optional().describe(D.pr_create.params.workItemIds),
+          isDraft: z.boolean().optional(),
+          profile: z.string().optional().describe(D.pr_create.params.profile),
         },
         async execute({ repo, sourceBranch, targetBranch, title, description, workItemIds, isDraft, profile }: { repo: string; sourceBranch: string; targetBranch: string; title: string; description?: string; workItemIds?: number[]; isDraft?: boolean; profile?: string }) {
           const { client: ado } = await createClient(profile);
@@ -799,20 +781,16 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
       },
 
-      ado_chain_prs: {
-        description: "Create a chain of PRs from ordered work items. Supports feature-chain (tracker branch + children) and stacked (each targets base) strategies.",
+      [D.pr_chain.name]: {
+        description: D.pr_chain.description,
         args: {
-          repo: z.string().describe("Target repository name"),
-          workItemIds: z
-            .array(z.number())
-            .min(1)
-            .max(50)
-            .describe("Ordered list of work item IDs. WI[0] = first branch, WI[1] builds on it, etc."),
-          baseBranch: z.string().optional().describe("Base branch (default: from .adoconfig.toml or 'main')"),
-          strategy: z.enum(["feature-chain", "stacked"]).optional().describe("Chain strategy (default: from .adoconfig.toml or 'feature-chain')"),
-          prefix: z.string().optional().describe("Branch prefix (default: from .adoconfig.toml or 'feature')"),
-          branchNames: z.array(z.string()).optional().describe("LLM-provided branch names. If omitted, derived from WI titles."),
-          profile: z.string().optional().describe("Profile override"),
+          repo: z.string().describe(D.pr_chain.params.repo),
+          workItemIds: z.array(z.number()).min(1).max(50).describe(D.pr_chain.params.workItemIds),
+          baseBranch: z.string().optional().describe(D.pr_chain.params.baseBranch),
+          strategy: z.enum(["feature-chain", "stacked"]).optional().describe(D.pr_chain.params.strategy),
+          prefix: z.string().optional().describe(D.pr_chain.params.prefix),
+          branchNames: z.array(z.string()).optional().describe(D.pr_chain.params.branchNames),
+          profile: z.string().optional().describe(D.pr_chain.params.profile),
         },
         async execute({ repo, workItemIds, baseBranch, strategy, prefix, branchNames, profile }: { repo: string; workItemIds: number[]; baseBranch?: string; strategy?: "feature-chain" | "stacked"; prefix?: string; branchNames?: string[]; profile?: string }) {
           const { client: ado } = await createClient(profile);

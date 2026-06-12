@@ -108,24 +108,52 @@ PAT resolution order:
 
 ## Available Tools
 
-- `ado_prs`
-- `ado_pr`
+### Migration: renamed tools (v0.5.x → v0.6.0)
+
+| Old name | New name |
+|---|---|
+| `ado_prs` | `ado_pr_list` |
+| `ado_pr` | `ado_pr_get` |
+| `ado_review` | `ado_pr_vote` |
+| `ado_select_pr` | `ado_pr_select` |
+| `ado_pr_review_context` | `ado_pr_context` |
+| `ado_create_pr` | `ado_pr_create` |
+| `ado_chain_prs` | `ado_pr_chain` |
+| `ado_work_items` | `ado_wi_list` |
+| `ado_work_item` | `ado_wi_get` |
+| `ado_work_item_update` | `ado_wi_update` |
+| `ado_work_item_comment` | `ado_wi_comment` |
+| `ado_work_item_types` | `ado_wi_types` |
+| `ado_create_work_item` | `ado_wi_create` |
+| `ado_create_child_work_item` | `ado_wi_create_child` |
+| `ado_related_work_items` | `ado_wi_related` |
+| `ado_profile` | `ado_profile_get` |
+| `ado_profiles` | `ado_profile_list` |
+
+### Current tool names
+
+- `ado_pr_list`
+- `ado_pr_get`
 - `ado_pr_threads`
 - `ado_pr_comment`
-- `ado_review`
+- `ado_pr_vote`
 - `ado_pr_diff`
 - `ado_pr_file`
-- `ado_pr_review_context`
-- `ado_select_pr`
-- `ado_profile`
-- `ado_profiles`
+- `ado_pr_context`
+- `ado_pr_select`
+- `ado_pr_create`
+- `ado_pr_chain`
+- `ado_profile_get`
+- `ado_profile_list`
 - `ado_profile_use`
-- `ado_work_items`
-- `ado_work_item`
-- `ado_work_item_update`
-- `ado_work_item_comment`
-- `ado_work_item_types`
-- `ado_related_work_items`
+- `ado_wi_list`
+- `ado_wi_get`
+- `ado_wi_update`
+- `ado_wi_comment`
+- `ado_wi_types`
+- `ado_wi_create`
+- `ado_wi_create_child`
+- `ado_wi_related`
 
 ## Pi Commands
 

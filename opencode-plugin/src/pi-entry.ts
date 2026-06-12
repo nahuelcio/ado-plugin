@@ -61,6 +61,7 @@ import {
   resolvePrArgsAuto,
   workItemIdFromUrl,
 } from "./ado-client.js";
+import { D } from "./tool-descriptions.js";
 
 // ─── Config Loading (Pi-specific) ────────────────────────────────────────
 
@@ -110,22 +111,7 @@ function tryReadAdoConfig(settingsPath: string): AdoConfig | undefined {
   return undefined;
 }
 
-// ─── TypeBox Schemas ──────────────────────────────────────────────────────
-
-const S = {
-  repo: Type.Optional(Type.String({ description: "Repo name (omit to auto-discover by PR ID)" })),
-  prId: Type.Optional(Type.Number({ description: "PR ID (auto-discovers across profiles when repo is omitted)" })),
-  profile: Type.Optional(Type.String({ description: "Profile override" })),
-  filePath: Type.Optional(Type.String({ description: "File path e.g. /src/app.ts" })),
-  line: Type.Optional(Type.Number({ description: "1-based line number" })),
-  vote: StringEnum(["approve", "reject", "wait", "suggestions"], { description: "Vote" }),
-  comment: Type.String({ description: "Comment text" }),
-  wiId: Type.Number({ description: "Work item ID" }),
-  wiState: Type.Optional(Type.String({ description: "State filter (e.g. Active, New)" })),
-  wiAssignedTo: Type.Optional(Type.String({ description: "Assigned user (default: @Me)" })),
-  wiTag: Type.Optional(Type.String({ description: "Tag filter" })),
-  wiType: Type.Optional(Type.String({ description: "Type filter (partial match)" })),
-};
+// ─── TypeBox Schemas (shared inline definitions) ──────────────────────────
 
 // ─── Extension Factory ────────────────────────────────────────────────────
 
@@ -167,12 +153,12 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_prs ──────────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_prs",
+    name: D.pr_list.name,
     label: "ADO PRs",
-    description: "List active PRs: pending reviews + your own",
+    description: D.pr_list.description,
     promptSnippet: "List Azure DevOps pull requests",
     parameters: Type.Object({
-      profile: S.profile,
+      profile: Type.Optional(Type.String({ description: D.pr_list.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { client: ado, profile: prof, name, userId } = await createClient(params.profile);
@@ -199,14 +185,14 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_pr ──────────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_pr",
+    name: D.pr_get.name,
     label: "ADO PR Details",
-    description: "PR details. Auto-discovers by PR ID across profiles",
+    description: D.pr_get.description,
     promptSnippet: "Show Azure DevOps pull request details",
     parameters: Type.Object({
-      repo: S.repo,
-      prId: S.prId,
-      profile: S.profile,
+      repo: Type.Optional(Type.String({ description: D.pr_get.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_get.params.prId })),
+      profile: Type.Optional(Type.String({ description: D.pr_get.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const config = getConfig(ctx.cwd);
@@ -220,14 +206,14 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_pr_threads ──────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_pr_threads",
+    name: D.pr_threads.name,
     label: "ADO PR Threads",
-    description: "Show PR comment threads. Auto-discovers by PR ID",
+    description: D.pr_threads.description,
     promptSnippet: "Show Azure DevOps PR comment threads",
     parameters: Type.Object({
-      repo: S.repo,
-      prId: S.prId,
-      profile: S.profile,
+      repo: Type.Optional(Type.String({ description: D.pr_threads.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_threads.params.prId })),
+      profile: Type.Optional(Type.String({ description: D.pr_threads.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const config = getConfig(ctx.cwd);
@@ -242,17 +228,17 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_pr_comment ──────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_pr_comment",
+    name: D.pr_comment.name,
     label: "ADO PR Comment",
-    description: "Add PR comment. Optional file/line attachment",
+    description: D.pr_comment.description,
     promptSnippet: "Add comment to Azure DevOps PR",
     parameters: Type.Object({
-      repo: S.repo,
-      prId: S.prId,
-      comment: S.comment,
-      filePath: S.filePath,
-      line: S.line,
-      profile: S.profile,
+      repo: Type.Optional(Type.String({ description: D.pr_comment.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_comment.params.prId })),
+      comment: Type.String({ description: D.pr_comment.params.comment }),
+      filePath: Type.Optional(Type.String({ description: D.pr_comment.params.filePath })),
+      line: Type.Optional(Type.Number({ description: D.pr_comment.params.line })),
+      profile: Type.Optional(Type.String({ description: D.pr_comment.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (params.line !== undefined && !params.filePath) {
@@ -270,16 +256,16 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_review ──────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_review",
+    name: D.pr_vote.name,
     label: "ADO Review",
-    description: "Vote on PR: approve, reject, wait, or suggestions",
+    description: D.pr_vote.description,
     promptSnippet: "Vote on Azure DevOps pull request",
     parameters: Type.Object({
-      repo: S.repo,
-      prId: S.prId,
-      vote: S.vote,
-      comment: Type.Optional(S.comment),
-      profile: S.profile,
+      repo: Type.Optional(Type.String({ description: D.pr_vote.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_vote.params.prId })),
+      vote: StringEnum(["approve", "reject", "wait", "suggestions"], { description: D.pr_vote.params.vote }),
+      comment: Type.Optional(Type.String({ description: D.pr_vote.params.comment })),
+      profile: Type.Optional(Type.String({ description: D.pr_vote.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const config = getConfig(ctx.cwd);
@@ -302,10 +288,10 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_profile ──────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_profile",
+    name: D.profile_get.name,
     label: "ADO Profile",
-    description: "Show active profile config",
-    parameters: Type.Object({ profile: S.profile }),
+    description: D.profile_get.description,
+    parameters: Type.Object({ profile: Type.Optional(Type.String({ description: D.profile_get.params.profile })) }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { profile: prof, name } = await createClient(params.profile);
       return { content: [{ type: "text", text: `## Profile: ${name}\n${prof.org}/${prof.project}\nrepos: ${prof.repos.join(", ")}\npat: ${prof.patEnvVar}` }], details: {} };
@@ -315,9 +301,9 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_profiles ──────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_profiles",
+    name: D.profile_list.name,
     label: "ADO Profiles",
-    description: "List available profiles",
+    description: D.profile_list.description,
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const config = getConfig(ctx.cwd);
@@ -334,11 +320,11 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_profile_use ──────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_profile_use",
+    name: D.profile_use.name,
     label: "ADO Use Profile",
-    description: "Switch active profile (persists)",
+    description: D.profile_use.description,
     parameters: Type.Object({
-      name: Type.String({ description: "Profile name" }),
+      name: Type.String({ description: D.profile_use.params.name }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const config = getConfig(ctx.cwd);
@@ -354,13 +340,13 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_select_pr ────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_select_pr",
+    name: D.pr_select.name,
     label: "ADO Select PR",
-    description: "Select PR (persists). Auto-discovers repo when only prId is provided.",
+    description: D.pr_select.description,
     parameters: Type.Object({
-      repo: Type.Optional(Type.String({ description: "Repository name (omit to auto-discover)" })),
-      prId: Type.Number({ description: "PR ID" }),
-      profile: S.profile,
+      repo: Type.Optional(Type.String({ description: D.pr_select.params.repo })),
+      prId: Type.Number({ description: D.pr_select.params.prId }),
+      profile: Type.Optional(Type.String({ description: D.pr_select.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       let resolvedRepo = params.repo;
@@ -381,13 +367,13 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_pr_diff ──────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_pr_diff",
+    name: D.pr_diff.name,
     label: "ADO PR Diff",
-    description: "List changed files in PR",
+    description: D.pr_diff.description,
     parameters: Type.Object({
-      repo: S.repo,
-      prId: S.prId,
-      profile: S.profile,
+      repo: Type.Optional(Type.String({ description: D.pr_diff.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_diff.params.prId })),
+      profile: Type.Optional(Type.String({ description: D.pr_diff.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const config = getConfig(ctx.cwd);
@@ -412,16 +398,16 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_pr_file ──────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_pr_file",
+    name: D.pr_file.name,
     label: "ADO PR File",
-    description: "Get file content from PR branch. Optional line range",
+    description: D.pr_file.description,
     parameters: Type.Object({
-      path: Type.String({ description: "File path e.g. /src/app.ts" }),
-      repo: S.repo,
-      prId: S.prId,
-      startLine: Type.Optional(Type.Number({ description: "Start line (1-based)" })),
-      endLine: Type.Optional(Type.Number({ description: "End line (1-based)" })),
-      profile: S.profile,
+      path: Type.String({ description: D.pr_file.params.path }),
+      repo: Type.Optional(Type.String({ description: D.pr_file.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_file.params.prId })),
+      startLine: Type.Optional(Type.Number({ description: D.pr_file.params.startLine })),
+      endLine: Type.Optional(Type.Number({ description: D.pr_file.params.endLine })),
+      profile: Type.Optional(Type.String({ description: D.pr_file.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const config = getConfig(ctx.cwd);
@@ -461,13 +447,13 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_pr_review_context ────────────────────────────────
 
   pi.registerTool({
-    name: "ado_pr_review_context",
+    name: D.pr_context.name,
     label: "ADO PR Review Context",
-    description: "Full PR review bundle: metadata, threads, files, commits",
+    description: D.pr_context.description,
     parameters: Type.Object({
-      repo: S.repo,
-      prId: S.prId,
-      profile: S.profile,
+      repo: Type.Optional(Type.String({ description: D.pr_context.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_context.params.prId })),
+      profile: Type.Optional(Type.String({ description: D.pr_context.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const config = getConfig(ctx.cwd);
@@ -517,7 +503,7 @@ export default function adoExtension(pi: ExtensionAPI) {
       }
 
       if (out.length > MAX_TOTAL) {
-        out = out.slice(0, MAX_TOTAL) + "\n⚠ Truncated. Use ado_pr_diff or ado_pr_threads for details.";
+        out = out.slice(0, MAX_TOTAL) + "\n⚠ Truncated. Use ado_pr_diff or ado_pr_context for details.";
       }
 
       return { content: [{ type: "text", text: out }], details: {} };
@@ -527,16 +513,16 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_work_items ────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_work_items",
+    name: D.wi_list.name,
     label: "ADO Work Items",
-    description: "List work items. Filter: state, assignedTo, tag, type",
+    description: D.wi_list.description,
     promptSnippet: "List Azure DevOps work items",
     parameters: Type.Object({
-      state: S.wiState,
-      assignedTo: S.wiAssignedTo,
-      tag: S.wiTag,
-      workItemType: S.wiType,
-      profile: S.profile,
+      state: Type.Optional(Type.String({ description: D.wi_list.params.state })),
+      assignedTo: Type.Optional(Type.String({ description: D.wi_list.params.assignedTo })),
+      tag: Type.Optional(Type.String({ description: D.wi_list.params.tag })),
+      workItemType: Type.Optional(Type.String({ description: D.wi_list.params.workItemType })),
+      profile: Type.Optional(Type.String({ description: D.wi_list.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { client: ado, name } = await createClient(params.profile);
@@ -565,12 +551,12 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_work_item ──────────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_work_item",
+    name: D.wi_get.name,
     label: "ADO Work Item",
-    description: "Show work item details and comments",
+    description: D.wi_get.description,
     parameters: Type.Object({
-      id: S.wiId,
-      profile: S.profile,
+      id: Type.Number({ description: D.wi_get.params.id }),
+      profile: Type.Optional(Type.String({ description: D.wi_get.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { client: ado, name } = await createClient(params.profile);
@@ -583,15 +569,15 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_work_item_update ──────────────────────────────────
 
   pi.registerTool({
-    name: "ado_work_item_update",
+    name: D.wi_update.name,
     label: "ADO Update Work Item",
-    description: "Update work item: state, priority, or add comment",
+    description: D.wi_update.description,
     parameters: Type.Object({
-      id: S.wiId,
-      state: Type.Optional(Type.String({ description: "New state (e.g. Active, Closed)" })),
-      priority: Type.Optional(Type.Number({ description: "New priority" })),
-      comment: Type.Optional(S.comment),
-      profile: S.profile,
+      id: Type.Number({ description: D.wi_update.params.id }),
+      state: Type.Optional(Type.String({ description: D.wi_update.params.state })),
+      priority: Type.Optional(Type.Number()),
+      comment: Type.Optional(Type.String({ description: D.wi_update.params.comment })),
+      profile: Type.Optional(Type.String({ description: D.wi_update.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { client: ado } = await createClient(params.profile);
@@ -611,13 +597,13 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_work_item_comment ──────────────────────────────────
 
   pi.registerTool({
-    name: "ado_work_item_comment",
+    name: D.wi_comment.name,
     label: "ADO Work Item Comment",
-    description: "Add comment to work item",
+    description: D.wi_comment.description,
     parameters: Type.Object({
-      id: S.wiId,
-      comment: S.comment,
-      profile: S.profile,
+      id: Type.Number({ description: D.wi_comment.params.id }),
+      comment: Type.String({ description: D.wi_comment.params.comment }),
+      profile: Type.Optional(Type.String({ description: D.wi_comment.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { client: ado } = await createClient(params.profile);
@@ -629,10 +615,10 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_work_item_types ────────────────────────────────────
 
   pi.registerTool({
-    name: "ado_work_item_types",
+    name: D.wi_types.name,
     label: "ADO Work Item Types",
-    description: "List work item types (discover custom types)",
-    parameters: Type.Object({ profile: S.profile }),
+    description: D.wi_types.description,
+    parameters: Type.Object({ profile: Type.Optional(Type.String({ description: D.wi_types.params.profile })) }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { client: ado, name } = await createClient(params.profile);
       const types = await ado.getWorkItemTypes();
@@ -644,14 +630,14 @@ export default function adoExtension(pi: ExtensionAPI) {
   // ─── Tool: ado_related_work_items ────────────────────────────────
 
   pi.registerTool({
-    name: "ado_related_work_items",
+    name: D.wi_related.name,
     label: "ADO Related Work Items",
-    description: "List related work items with summary + details",
+    description: D.wi_related.description,
     parameters: Type.Object({
-      id: S.wiId,
-      state: S.wiState,
-      workItemType: S.wiType,
-      profile: S.profile,
+      id: Type.Number({ description: D.wi_related.params.id }),
+      state: Type.Optional(Type.String({ description: D.wi_related.params.state })),
+      workItemType: Type.Optional(Type.String({ description: D.wi_related.params.workItemType })),
+      profile: Type.Optional(Type.String({ description: D.wi_related.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { client: ado, name } = await createClient(params.profile);
