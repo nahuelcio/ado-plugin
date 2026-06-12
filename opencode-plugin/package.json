@@ -1,5 +1,5 @@
 {
-  "name": "@nahuelcio/opencode-ado",
+  "name": "@cioffinahuel/opencode-ado",
   "version": "0.5.0",
   "description": "Azure DevOps plugin for OpenCode/Pi — PR reviews, profiles, sidebar panel",
   "type": "module",

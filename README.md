@@ -1,6 +1,6 @@
-# @nahuelcio/opencode-ado
+# @cioffinahuel/opencode-ado
 
-[![npm version](https://badge.fury.io/js/%40nahuelcio%2Fopencode-ado.svg)](https://www.npmjs.org/package/@nahuelcio/opencode-ado)
+[![npm version](https://badge.fury.io/js/%40nahuelcio%2Fopencode-ado.svg)](https://www.npmjs.org/package/@cioffinahuel/opencode-ado)
 
 Azure DevOps integration for AI coding assistants. Works with **OpenCode** and **Pi**.
 
@@ -19,13 +19,13 @@ Azure DevOps integration for AI coding assistants. Works with **OpenCode** and *
 ### OpenCode
 
 ```bash
-npx @nahuelcio/opencode-ado init
+npx @cioffinahuel/opencode-ado init
 ```
 
 ### Pi
 
 ```bash
-pi install npm:@nahuelcio/opencode-ado
+pi install npm:@cioffinahuel/opencode-ado
 ```
 
 Then configure (shared with OpenCode):
@@ -45,7 +45,7 @@ Then configure (shared with OpenCode):
 {
   "plugin": [
     [
-      "@nahuelcio/opencode-ado",
+      "@cioffinahuel/opencode-ado",
       {
         "defaultProfile": "work",
         "profiles": {
@@ -129,9 +129,9 @@ Available to the LLM in both OpenCode and Pi:
 ## CLI Commands (OpenCode)
 
 ```bash
-npx @nahuelcio/opencode-ado init          # Interactive setup
-npx @nahuelcio/opencode-ado sync          # Register existing config
-npx @nahuelcio/opencode-ado show          # Show current config
+npx @cioffinahuel/opencode-ado init          # Interactive setup
+npx @cioffinahuel/opencode-ado sync          # Register existing config
+npx @cioffinahuel/opencode-ado show          # Show current config
 ```
 
 ## Development
@@ -153,6 +153,6 @@ Nahuel Cioffi
 
 ## Links
 
-- [npm Package](https://www.npmjs.org/package/@nahuelcio/opencode-ado)
+- [npm Package](https://www.npmjs.org/package/@cioffinahuel/opencode-ado)
 - [GitHub Repository](https://github.com/nahuelcio/ado-plugin)
 - [Azure DevOps Documentation](https://learn.microsoft.com/azure/devops/)

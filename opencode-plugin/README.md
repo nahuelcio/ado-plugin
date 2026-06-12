@@ -1,6 +1,6 @@
-# @nahuelcio/opencode-ado
+# @cioffinahuel/opencode-ado
 
-[![npm version](https://badge.fury.io/js/%40nahuelcio%2Fopencode-ado.svg)](https://www.npmjs.org/package/@nahuelcio/opencode-ado)
+[![npm version](https://badge.fury.io/js/%40nahuelcio%2Fopencode-ado.svg)](https://www.npmjs.org/package/@cioffinahuel/opencode-ado)
 
 Azure DevOps plugin for **OpenCode** + **Pi**.
 
@@ -9,7 +9,7 @@ Azure DevOps plugin for **OpenCode** + **Pi**.
 ### OpenCode
 
 ```bash
-npx @nahuelcio/opencode-ado init
+npx @cioffinahuel/opencode-ado init
 ```
 
 This wizard:
@@ -20,7 +20,7 @@ This wizard:
 ### Pi
 
 ```bash
-pi install npm:@nahuelcio/opencode-ado
+pi install npm:@cioffinahuel/opencode-ado
 ```
 
 Then create config with:
@@ -32,10 +32,10 @@ Then create config with:
 ## CLI
 
 ```bash
-npx @nahuelcio/opencode-ado init       # interactive setup wizard
-npx @nahuelcio/opencode-ado sync       # register existing ADO config in OpenCode + TUI
-npx @nahuelcio/opencode-ado show       # show current config
-npx @nahuelcio/opencode-ado --help     # help
+npx @cioffinahuel/opencode-ado init       # interactive setup wizard
+npx @cioffinahuel/opencode-ado sync       # register existing ADO config in OpenCode + TUI
+npx @cioffinahuel/opencode-ado show       # show current config
+npx @cioffinahuel/opencode-ado --help     # help
 ```
 
 For local workspace testing (without publishing):
@@ -54,7 +54,7 @@ The plugin config is stored in OpenCode as plugin options:
 {
   "plugin": [
     [
-      "@nahuelcio/opencode-ado",
+      "@cioffinahuel/opencode-ado",
       {
         "defaultProfile": "work",
         "profiles": {
@@ -148,6 +148,6 @@ MIT
 
 ## Links
 
-- [npm package](https://www.npmjs.org/package/@nahuelcio/opencode-ado)
+- [npm package](https://www.npmjs.org/package/@cioffinahuel/opencode-ado)
 - [GitHub repository](https://github.com/nahuelcio/azure-devops-cli-go)
 - [Azure DevOps docs](https://learn.microsoft.com/azure/devops/)
