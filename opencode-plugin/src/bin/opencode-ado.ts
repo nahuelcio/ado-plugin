@@ -330,6 +330,62 @@ function syncExistingConfig(pluginSpec = getVersionedPluginSpec()): { configPath
   return { configPath, tuiPath: writtenTuiPath, pluginSpec };
 }
 
+// ─── TOML helpers ──────────────────────────────────────────────────────────
+
+function readExistingTomlValues(path: string): Record<string, string> {
+  if (!existsSync(path)) return {};
+  const content = readFileSync(path, "utf-8");
+  const values: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const match = line.match(/^(\w+)\s*=\s*"?([^"]*)"?\s*(?:#.*)?$/);
+    if (match) values[match[1]] = match[2];
+  }
+  return values;
+}
+
+async function writeAdoConfig(configPath: string, defaults?: Record<string, string>): Promise<void> {
+  console.log();
+  console.log(`  ${bold("── Project Rules (.adoconfig.toml) ──")}`);
+  console.log();
+
+  const d = defaults ?? {};
+  const strategy = await ask("Default chain strategy (feature-chain/stacked)", d["strategy"] ?? "feature-chain");
+  const baseBranch = await ask("Base branch", d["base_branch"] ?? "main");
+  const maxLengthStr = await ask("Max chain length", d["max_length"] ?? "10");
+  const maxLength = parseInt(maxLengthStr, 10);
+  const prefix = await ask("Branch prefix", d["prefix"] ?? "feature");
+  const requireWorkItem = await yesNo("Require work items for PRs?", d["require_work_item"] !== "false");
+  const defaultDraft = await yesNo("Create PRs as draft by default?", d["default_draft"] === "true");
+
+  const toml = `# .adoconfig.toml — Project-level ADO conventions
+
+[chain]
+strategy = "${strategy}"        # "feature-chain" | "stacked"
+base_branch = "${baseBranch}"
+max_length = ${isNaN(maxLength) ? 10 : maxLength}
+prefix = "${prefix}"
+
+[branch]
+allowed_types = ["feature", "bugfix", "hotfix", "chore", "refactor"]
+slug_max_length = 40
+require_wi_id = true
+
+[pr]
+require_work_item = ${requireWorkItem}
+include_chain_context = true
+review_budget = 400
+default_draft = ${defaultDraft}
+
+[work_item]
+auto_transition = false
+target_state = "In Dev"
+`;
+
+  writeFileSync(configPath, toml, "utf-8");
+  console.log();
+  console.log(`  ${green("✓")} Wrote ${configPath}`);
+}
+
 async function runInit(_cwd: string): Promise<number> {
   console.log();
   console.log(bold("  Azure DevOps Plugin for OpenCode"));
@@ -505,6 +561,49 @@ async function runInit(_cwd: string): Promise<number> {
   }
   console.log();
 
+  // ── Step 7: Project Rules (.adoconfig.toml) ────────────────────────
+  const adoConfigPath = join(_cwd, ".adoconfig.toml");
+
+  const generateConfig = await yesNo("Generate .adoconfig.toml for this project?");
+  if (generateConfig) {
+    if (existsSync(adoConfigPath)) {
+      const overwrite = await yesNo(".adoconfig.toml already exists. Overwrite?", false);
+      if (!overwrite) {
+        console.log(yellow("  Skipped .adoconfig.toml generation"));
+      } else {
+        const existing = readExistingTomlValues(adoConfigPath);
+        await writeAdoConfig(adoConfigPath, existing);
+      }
+    } else {
+      await writeAdoConfig(adoConfigPath);
+    }
+    console.log(`  ${cyan("Tip:")} Run ${bold("'ado config'")} to regenerate .adoconfig.toml without the full wizard`);
+  }
+
+  return 0;
+}
+
+// ─── Config Command ────────────────────────────────────────────────────────
+
+async function runConfig(cwd: string): Promise<number> {
+  console.log();
+  console.log(bold("  Project Rules Configuration"));
+  console.log();
+
+  const adoConfigPath = join(cwd, ".adoconfig.toml");
+
+  if (existsSync(adoConfigPath)) {
+    const existing = readExistingTomlValues(adoConfigPath);
+    const overwrite = await yesNo("Overwrite existing .adoconfig.toml?", false);
+    if (!overwrite) {
+      console.log(yellow("  Cancelled"));
+      return 0;
+    }
+    await writeAdoConfig(adoConfigPath, existing);
+  } else {
+    await writeAdoConfig(adoConfigPath);
+  }
+
   return 0;
 }
 
@@ -601,6 +700,7 @@ const USAGE = [
   "",
   "  Usage:",
   `    ${cyan("npx @nahuelcio/opencode-ado init")}    Interactive setup wizard`,
+  `    ${cyan("npx @nahuelcio/opencode-ado config")}  Generate .adoconfig.toml for this project`,
   `    ${cyan("npx @nahuelcio/opencode-ado sync")}    Register existing config in OpenCode + TUI`,
   `    ${cyan("node dist/bin/opencode-ado.js sync-local")}  Register local workspace build without publishing`,
   `    ${cyan("npx @nahuelcio/opencode-ado show")}    Show current config`,
@@ -615,6 +715,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 0;
   }
   if (command === "init") return runInit(process.cwd());
+  if (command === "config") return runConfig(process.cwd());
   if (command === "sync" || command === "repair" || command === "install") return runSync();
   if (command === "sync-local") return runSyncLocal();
   if (command === "show") return runShow();
