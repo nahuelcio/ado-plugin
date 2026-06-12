@@ -108,8 +108,8 @@ export function validatePAT(pat: string): void {
     throw new Error("PAT is too short. Azure DevOps PATs should be at least 52 characters.");
   }
 
-  if (pat.length > 100) {
-    throw new Error("PAT is too long. Suspicious input.");
+  if (pat.length > 256) {
+    throw new Error("PAT is too long. Azure DevOps PATs should not exceed 256 characters.");
   }
 
   // Azure DevOps PATs are base64-like: alphanumeric with optional padding (=) at the end

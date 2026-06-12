@@ -20,8 +20,17 @@ describe("PAT validation", () => {
     expect(() => validatePAT("short")).toThrow("PAT is too short");
   });
 
-  it("rejects overly long PATs", () => {
-    expect(() => validatePAT("a".repeat(200))).toThrow("PAT is too long");
+  it("rejects PATs exceeding 256 characters", () => {
+    expect(() => validatePAT("a".repeat(300))).toThrow("PAT is too long");
+  });
+
+  it("accepts a valid base64-like PAT of length 150", () => {
+    const pat = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-".repeat(3).slice(0, 150);
+    expect(() => validatePAT(pat)).not.toThrow();
+  });
+
+  it("rejects PATs of length 300", () => {
+    expect(() => validatePAT("a".repeat(300))).toThrow("PAT is too long");
   });
 
   it("rejects PATs with invalid characters", () => {
