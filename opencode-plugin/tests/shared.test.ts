@@ -230,6 +230,11 @@ describe("relativeTime", () => {
     expect(relativeTime(d)).toBe("just now");
   });
 
+  it("clamps future dates (clock skew) to 'just now'", () => {
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    expect(relativeTime(d)).toBe("just now");
+  });
+
   it("returns minutes ago", () => {
     const d = new Date(Date.now() - 5 * 60 * 1000);
     expect(relativeTime(d)).toBe("5m ago");

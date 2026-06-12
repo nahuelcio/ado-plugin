@@ -317,7 +317,8 @@ export function relativeTime(date: Date | string | undefined): string {
     d = new Date(date);
   }
   if (isNaN(d.getTime())) return typeof date === "string" ? date : "";
-  const diffMs = Date.now() - d.getTime();
+  // Clamp future dates (clock skew) to "just now" instead of negative buckets
+  const diffMs = Math.max(0, Date.now() - d.getTime());
   const diffSec = Math.floor(diffMs / 1000);
   if (diffSec < 60) return "just now";
   const diffMin = Math.floor(diffSec / 60);
