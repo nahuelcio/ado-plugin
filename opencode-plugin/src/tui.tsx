@@ -45,6 +45,10 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const SIDEBAR_LOAD_TIMEOUT_MS = 15_000;
 const POLL_INTERVAL_MS = 60_000;
 
+// Module-level cache for /connectionData responses keyed by orgUrl + "|" + profile name.
+// Lives for the duration of the process; profile switches change the key naturally.
+const connectionDataCache = new Map<string, string>();
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 interface SidebarData {
@@ -147,9 +151,14 @@ async function fetchPRData(
     return res.json() as Promise<{ value: any[] }>;
   };
 
-  // Get user identity
-  const connData = await doReq("/connectionData", "org", CONNECTION_DATA_API_VERSION) as any;
-  const userId: string | undefined = connData?.authenticatedUser?.id;
+  // Get user identity (cached per org+profile to avoid repeated round-trips)
+  const connDataKey = `${orgUrl}|${name}`;
+  let userId: string | undefined = connectionDataCache.get(connDataKey);
+  if (!userId) {
+    const connData = await doReq("/connectionData", "org", CONNECTION_DATA_API_VERSION) as any;
+    userId = connData?.authenticatedUser?.id;
+    if (userId) connectionDataCache.set(connDataKey, userId);
+  }
 
   const assigned: PRSummary[] = [];
   const mine: PRSummary[] = [];
