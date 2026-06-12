@@ -1,14 +1,8 @@
 /**
  * Integration tests for the chained PRs tool-level logic.
  *
- * The ado_create_pr and ado_chain_prs tools are closures inside the server
- * plugin function, so they can't be imported directly. Instead, we test:
- *
- * 1. Validation logic — extracted into pure functions for testability.
- * 2. Orchestration logic — by simulating the chain creation algorithm
- *    with mocked AdoClient methods.
- * 3. Edge cases in artifact URL construction, config resolution, and
- *    error handling patterns.
+ * Tests exercise the real runCreatePr and runChainPrs functions from chain-runner.ts
+ * with mocked AdoClient (via vi.spyOn(globalThis, "fetch")).
  *
  * What's NOT tested here:
  * - The actual plugin registration (framework concern).
@@ -26,6 +20,7 @@ import {
 } from "../src/chain-helpers.js";
 import { BranchNameSchema, ProjectConfigSchema, type ChainResult, type ChainStep } from "../src/chain-types.js";
 import { loadProjectConfig } from "../src/chain-config.js";
+import { runCreatePr, runChainPrs } from "../src/chain-runner.js";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -45,206 +40,6 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-/**
- * Simulate the full chain creation algorithm from ado_chain_prs.
- * This mirrors the logic in src/index.ts without requiring the plugin closure.
- */
-async function simulateChainCreation(params: {
-  client: AdoClient;
-  repo: string;
-  workItemIds: number[];
-  strategy: "feature-chain" | "stacked";
-  baseBranch: string;
-  prefix: string;
-  trackerName: string;
-  config: {
-    pr: { include_chain_context: boolean; default_draft: boolean };
-    branch: { slug_max_length: number };
-    chain: { tracker_name: string };
-    work_item: { auto_transition: boolean; target_state: string };
-  };
-  branchNames?: string[];
-}): Promise<ChainResult> {
-  const {
-    client: ado,
-    repo,
-    workItemIds,
-    strategy,
-    baseBranch,
-    prefix,
-    config,
-    branchNames: providedBranchNames,
-  } = params;
-
-  // Fetch work items
-  const workItems = await ado.getWorkItemsByIds(workItemIds);
-  const fetchedById = new Map(workItems.map((wi: any) => [wi.id, wi]));
-
-  // Derive branch names
-  const resolvedBranchNames: string[] = [];
-  if (providedBranchNames) {
-    for (const name of providedBranchNames) {
-      const parsed = BranchNameSchema.safeParse(name);
-      if (!parsed.success) {
-        throw new Error(
-          `Error: Invalid branch name "${name}": ${parsed.error.issues.map((i) => i.message).join(", ")}`,
-        );
-      }
-      resolvedBranchNames.push(name);
-    }
-  } else {
-    for (const wiId of workItemIds) {
-      const wi = fetchedById.get(wiId);
-      const wiTitle = wi?.fields?.["System.Title"] ?? `wi-${wiId}`;
-      resolvedBranchNames.push(
-        deriveBranchName(prefix, wiId, wiTitle, config.branch.slug_max_length),
-      );
-    }
-  }
-
-  // Get base branch tip
-  const baseTip = await ado.getBranchTip(repo, baseBranch);
-
-  // Get repo metadata
-  const { repoId, projectId } = await ado.getRepository(repo);
-
-  // Build result
-  const result: ChainResult = {
-    strategy,
-    steps: [],
-    created: 0,
-    branchesCreated: 0,
-    linked: 0,
-    errors: [],
-  };
-
-  // Feature-chain: create tracker branch and PR
-  if (strategy === "feature-chain") {
-    let trackerName: string;
-    if (params.trackerName) {
-      trackerName = params.trackerName;
-    } else {
-      const firstWi = fetchedById.get(workItemIds[0]);
-      const firstTitle = firstWi?.fields?.["System.Title"] ?? "tracker";
-      const trackerSlug = slugify(firstTitle, 40);
-      trackerName = `${prefix}/${trackerSlug}`;
-    }
-
-    try {
-      await ado.createBranch(repo, trackerName, baseTip);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`Error: Failed to create tracker branch "${trackerName}": ${msg}`);
-    }
-
-    try {
-      const trackerPr = await ado.createPullRequest(repo, {
-        sourceRefName: `refs/heads/${trackerName}`,
-        targetRefName: `refs/heads/${baseBranch}`,
-        title: `Tracker: ${trackerName}`,
-        description: `Tracker branch for chained PRs (${workItemIds.length} work items)`,
-        isDraft: true,
-      });
-
-      result.tracker = {
-        branchName: trackerName,
-        prId: trackerPr.pullRequestId,
-        prUrl: trackerPr.url ?? "",
-      };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Error: Tracker branch "${trackerName}" created, but tracker PR failed: ${msg}. Orphaned tracker branch exists — delete manually if needed.`,
-      );
-    }
-  }
-
-  // Create branches and PRs for each work item
-  for (let i = 0; i < workItemIds.length; i++) {
-    const wiId = workItemIds[i];
-    const wi = fetchedById.get(wiId);
-    const wiTitle = wi?.fields?.["System.Title"] ?? `WI #${wiId}`;
-    const branchName = resolvedBranchNames[i];
-
-    const step: ChainStep = {
-      workItemId: wiId,
-      workItemTitle: wiTitle,
-      branchName,
-      refName: `refs/heads/${branchName}`,
-      parentRefName: `refs/heads/${baseBranch}`,
-      linked: false,
-    };
-
-    // Create branch
-    try {
-      await ado.createBranch(repo, branchName, baseTip);
-      result.branchesCreated++;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      step.error = `Branch creation failed: ${msg}`;
-      result.steps.push(step);
-      result.errors.push(`WI #${wiId} (${branchName}): ${step.error}`);
-      continue;
-    }
-
-    // Determine PR target
-    let prTargetRef: string;
-    if (strategy === "feature-chain") {
-      if (i === 0 && result.tracker) {
-        prTargetRef = `refs/heads/${result.tracker.branchName}`;
-      } else if (i > 0) {
-        prTargetRef = `refs/heads/${resolvedBranchNames[i - 1]}`;
-      } else {
-        prTargetRef = `refs/heads/${baseBranch}`;
-      }
-    } else {
-      prTargetRef = `refs/heads/${baseBranch}`;
-    }
-    step.parentRefName = prTargetRef;
-
-    // Build PR title
-    const prTitle = `${wiTitle} — WI #${wiId}`;
-
-    // Create PR
-    try {
-      const pr = await ado.createPullRequest(repo, {
-        sourceRefName: step.refName,
-        targetRefName: prTargetRef,
-        title: prTitle,
-        isDraft: config.pr.default_draft,
-      });
-
-      step.pr = {
-        id: pr.pullRequestId,
-        url: pr.url ?? "",
-      };
-      result.created++;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      step.error = `PR creation failed: ${msg}`;
-      result.steps.push(step);
-      result.errors.push(`WI #${wiId} (${branchName}): ${step.error}`);
-      continue;
-    }
-
-    // Link WI to PR
-    try {
-      const artifactUrl = `vstfs:///Git/PullRequestId/${projectId}%2f${repoId}%2f${step.pr!.id}`;
-      await ado.linkWorkItemToPr(wiId, artifactUrl);
-      step.linked = true;
-      result.linked++;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      step.error = `WI link failed: ${msg}`;
-      result.errors.push(`WI #${wiId}: ${step.error}`);
-    }
-
-    result.steps.push(step);
-  }
-
-  return result;
 }
 
 // ─── ado_create_pr: Validation logic ────────────────────────────────────────
@@ -641,97 +436,7 @@ describe("ado_chain_prs: validation logic", () => {
   });
 });
 
-// ─── ado_chain_prs: PR target logic ─────────────────────────────────────────
-
-describe("ado_chain_prs: PR target resolution", () => {
-  it("feature-chain: first PR targets tracker, subsequent target previous branch", () => {
-    const strategy = "feature-chain";
-    const baseBranch = "main";
-    const branchNames = [
-      "feature/123-auth-schema",
-      "feature/124-auth-api",
-      "feature/125-auth-ui",
-    ];
-    const tracker = { branchName: "feature/auth-tracker", prId: 100, prUrl: "" };
-
-    // Step 0: target = tracker branch
-    const target0 = resolvePrTarget(strategy, 0, branchNames, baseBranch, tracker);
-    expect(target0).toBe("refs/heads/feature/auth-tracker");
-
-    // Step 1: target = previous branch (123)
-    const target1 = resolvePrTarget(strategy, 1, branchNames, baseBranch, tracker);
-    expect(target1).toBe("refs/heads/feature/123-auth-schema");
-
-    // Step 2: target = previous branch (124)
-    const target2 = resolvePrTarget(strategy, 2, branchNames, baseBranch, tracker);
-    expect(target2).toBe("refs/heads/feature/124-auth-api");
-  });
-
-  it("feature-chain: without tracker, first PR targets base branch", () => {
-    const strategy = "feature-chain";
-    const baseBranch = "main";
-    const branchNames = ["feature/123-auth-schema"];
-    const tracker = undefined;
-
-    const target = resolvePrTarget(strategy, 0, branchNames, baseBranch, tracker);
-    expect(target).toBe("refs/heads/main");
-  });
-
-  it("stacked: all PRs target the base branch", () => {
-    const strategy = "stacked";
-    const baseBranch = "develop";
-    const branchNames = [
-      "feature/123-auth-schema",
-      "feature/124-auth-api",
-      "feature/125-auth-ui",
-    ];
-
-    for (let i = 0; i < branchNames.length; i++) {
-      const target = resolvePrTarget(strategy, i, branchNames, baseBranch, undefined);
-      expect(target).toBe("refs/heads/develop");
-    }
-  });
-
-  it("feature-chain: second step without tracker targets previous branch", () => {
-    const strategy = "feature-chain";
-    const baseBranch = "main";
-    const branchNames = [
-      "feature/123-auth-schema",
-      "feature/124-auth-api",
-    ];
-    const tracker = undefined;
-
-    // Step 1 (no tracker): target = previous branch
-    const target = resolvePrTarget(strategy, 1, branchNames, baseBranch, tracker);
-    expect(target).toBe("refs/heads/feature/123-auth-schema");
-  });
-});
-
-/**
- * Pure function that mirrors the PR target resolution logic in index.ts.
- * Extracted for testability.
- */
-function resolvePrTarget(
-  strategy: "feature-chain" | "stacked",
-  index: number,
-  branchNames: string[],
-  baseBranch: string,
-  tracker: { branchName: string; prId: number; prUrl: string } | undefined,
-): string {
-  if (strategy === "feature-chain") {
-    if (index === 0 && tracker) {
-      return `refs/heads/${tracker.branchName}`;
-    } else if (index > 0) {
-      return `refs/heads/${branchNames[index - 1]}`;
-    } else {
-      return `refs/heads/${baseBranch}`;
-    }
-  } else {
-    return `refs/heads/${baseBranch}`;
-  }
-}
-
-// ─── ado_chain_prs: Full chain simulation ───────────────────────────────────
+// ─── ado_chain_prs: Full chain simulation (real runChainPrs) ─────────────────
 
 describe("ado_chain_prs: full chain simulation", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
@@ -760,7 +465,7 @@ describe("ado_chain_prs: full chain simulation", () => {
       }),
     );
 
-    // Mock: getBranchTip
+    // Mock: getBranchTip (base branch — main)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ value: [{ objectId: "abc123" }] }),
     );
@@ -780,6 +485,11 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ pullRequestId: 100, url: "https://example.com/pr/100" }),
     );
 
+    // Mock: getBranchTip (WI 123 child branch — 404 means branch doesn't exist → createBranch)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
+    );
+
     // Mock: createBranch (WI 123)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse([{ name: "refs/heads/feature/123-auth-schema", success: true, objectId: "abc123", oldObjectId: "0".repeat(40) }]),
@@ -798,6 +508,11 @@ describe("ado_chain_prs: full chain simulation", () => {
     // Mock: linkWorkItemToPr — updateWorkItem (WI 123)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: 123 }),
+    );
+
+    // Mock: getBranchTip (WI 124 child branch — 404 means branch doesn't exist)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
     );
 
     // Mock: createBranch (WI 124)
@@ -820,41 +535,15 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: 124 }),
     );
 
-    const result = await simulateChainCreation({
-      client,
+    const output = await runChainPrs(client, config, {
       repo,
       workItemIds,
       strategy: "feature-chain",
       baseBranch: "main",
       prefix: "feature",
-      trackerName: "",
-      config: config as any,
     });
 
-    // Verify result structure
-    expect(result.strategy).toBe("feature-chain");
-    expect(result.created).toBe(2);
-    expect(result.linked).toBe(2);
-    expect(result.errors).toHaveLength(0);
-    expect(result.steps).toHaveLength(2);
-
-    // Verify tracker
-    expect(result.tracker).toBeDefined();
-    expect(result.tracker!.prId).toBe(100);
-    expect(result.tracker!.branchName).toBe("feature/auth-schema");
-
-    // Verify PR targets
-    // Step 0 → tracker branch
-    expect(result.steps[0].parentRefName).toBe("refs/heads/feature/auth-schema");
-    // Step 1 → step 0's branch
-    expect(result.steps[1].parentRefName).toBe("refs/heads/feature/123-auth-schema");
-
-    // Verify branch names derived from WI titles
-    expect(result.steps[0].branchName).toBe("feature/123-auth-schema");
-    expect(result.steps[1].branchName).toBe("feature/124-auth-api");
-
     // Verify output formatting
-    const output = formatChainResult(result);
     expect(output).toContain("## Chain Created: feature-chain (2 PRs)");
     expect(output).toContain("### Tracker");
     expect(output).toContain("#100");
@@ -862,6 +551,8 @@ describe("ado_chain_prs: full chain simulation", () => {
     expect(output).toContain("#123 Auth Schema");
     expect(output).toContain("PR #101");
     expect(output).toContain("(linked)");
+    expect(output).toContain("#124 Auth API");
+    expect(output).toContain("PR #102");
   });
 
   it("creates a stacked chain with 2 work items (happy path)", async () => {
@@ -880,7 +571,7 @@ describe("ado_chain_prs: full chain simulation", () => {
       }),
     );
 
-    // Mock: getBranchTip
+    // Mock: getBranchTip (base)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ value: [{ objectId: "abc123" }] }),
     );
@@ -888,6 +579,11 @@ describe("ado_chain_prs: full chain simulation", () => {
     // Mock: getRepository
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: "repo-id", project: { id: "proj-id" } }),
+    );
+
+    // Mock: getBranchTip (WI 123 — not found, so create)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
     );
 
     // Mock: createBranch (WI 123)
@@ -910,6 +606,11 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: 123 }),
     );
 
+    // Mock: getBranchTip (WI 124 — not found)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
+    );
+
     // Mock: createBranch (WI 124)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse([{ name: "refs/heads/feature/124-auth-api", success: true, objectId: "abc123", oldObjectId: "0".repeat(40) }]),
@@ -930,33 +631,14 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: 124 }),
     );
 
-    const result = await simulateChainCreation({
-      client,
+    const output = await runChainPrs(client, config, {
       repo,
       workItemIds,
       strategy: "stacked",
       baseBranch: "main",
       prefix: "feature",
-      trackerName: "",
-      config: config as any,
     });
 
-    // Verify result structure
-    expect(result.strategy).toBe("stacked");
-    expect(result.created).toBe(2);
-    expect(result.linked).toBe(2);
-    expect(result.errors).toHaveLength(0);
-    expect(result.steps).toHaveLength(2);
-
-    // No tracker for stacked strategy
-    expect(result.tracker).toBeUndefined();
-
-    // All PRs target base branch
-    expect(result.steps[0].parentRefName).toBe("refs/heads/main");
-    expect(result.steps[1].parentRefName).toBe("refs/heads/main");
-
-    // Output should NOT contain tracker section
-    const output = formatChainResult(result);
     expect(output).toContain("## Chain Created: stacked (2 PRs)");
     expect(output).not.toContain("### Tracker");
   });
@@ -977,7 +659,7 @@ describe("ado_chain_prs: full chain simulation", () => {
       }),
     );
 
-    // Mock: getBranchTip
+    // Mock: getBranchTip (base)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ value: [{ objectId: "abc123" }] }),
     );
@@ -987,15 +669,16 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: "repo-id", project: { id: "proj-id" } }),
     );
 
-    // Mock: createBranch (WI 123) — FAILS
+    // Mock: getBranchTip (WI 123 — exists with DIFFERENT tip, so treated as error)
     fetchSpy.mockResolvedValueOnce(
-      jsonResponse([{
-        name: "refs/heads/feature/123-auth-schema",
-        success: false,
-        updateStatus: "failed",
-        objectId: "",
-        oldObjectId: "",
-      }]),
+      jsonResponse({ value: [{ objectId: "different-tip-xyz" }] }),
+    );
+
+    // No createBranch for WI 123 (skipped due to conflict)
+
+    // Mock: getBranchTip (WI 124 — not found, create it)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
     );
 
     // Mock: createBranch (WI 124) — succeeds
@@ -1018,35 +701,18 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: 124 }),
     );
 
-    const result = await simulateChainCreation({
-      client,
+    const output = await runChainPrs(client, config, {
       repo,
       workItemIds,
       strategy: "stacked",
       baseBranch: "main",
       prefix: "feature",
-      trackerName: "",
-      config: config as any,
     });
 
     // Step 0 failed but step 1 succeeded
-    expect(result.created).toBe(1);
-    expect(result.linked).toBe(1);
-    expect(result.steps).toHaveLength(2);
-    expect(result.errors).toHaveLength(1);
-
-    // Step 0 has error
-    expect(result.steps[0].error).toContain("Branch creation failed");
-    expect(result.steps[0].pr).toBeUndefined();
-
-    // Step 1 succeeded
-    expect(result.steps[1].pr).toBeDefined();
-    expect(result.steps[1].linked).toBe(true);
-
-    // Output shows partial failure
-    const output = formatChainResult(result);
     expect(output).toContain("⚠️");
     expect(output).toContain("### Errors");
+    expect(output).toContain("PR #102");
   });
 
   it("continues after WI link failure (PR still created)", async () => {
@@ -1064,7 +730,7 @@ describe("ado_chain_prs: full chain simulation", () => {
       }),
     );
 
-    // Mock: getBranchTip
+    // Mock: getBranchTip (base)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ value: [{ objectId: "abc123" }] }),
     );
@@ -1072,6 +738,11 @@ describe("ado_chain_prs: full chain simulation", () => {
     // Mock: getRepository
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: "repo-id", project: { id: "proj-id" } }),
+    );
+
+    // Mock: getBranchTip (WI 123 — not found, create it)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
     );
 
     // Mock: createBranch (WI 123) — succeeds
@@ -1089,25 +760,17 @@ describe("ado_chain_prs: full chain simulation", () => {
       new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
     );
 
-    const result = await simulateChainCreation({
-      client,
+    const output = await runChainPrs(client, config, {
       repo,
       workItemIds,
       strategy: "stacked",
       baseBranch: "main",
       prefix: "feature",
-      trackerName: "",
-      config: config as any,
     });
 
-    // PR was created but WI link failed
-    expect(result.created).toBe(1);
-    expect(result.linked).toBe(0);
-    expect(result.steps[0].pr).toBeDefined();
-    expect(result.steps[0].pr!.id).toBe(101);
-    expect(result.steps[0].linked).toBe(false);
-    expect(result.steps[0].error).toContain("WI link failed");
-    expect(result.errors).toHaveLength(1);
+    // PR was created but WI link failed — output still mentions PR
+    expect(output).toContain("PR #101");
+    expect(output).toContain("WI link failed");
   });
 
   it("uses custom tracker_name from config when provided", async () => {
@@ -1127,7 +790,7 @@ describe("ado_chain_prs: full chain simulation", () => {
       }),
     );
 
-    // Mock: getBranchTip
+    // Mock: getBranchTip (base)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ value: [{ objectId: "abc123" }] }),
     );
@@ -1145,6 +808,11 @@ describe("ado_chain_prs: full chain simulation", () => {
     // Mock: createPullRequest (tracker)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ pullRequestId: 100, url: "https://example.com/pr/100" }),
+    );
+
+    // Mock: getBranchTip (WI 123 — not found)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
     );
 
     // Mock: createBranch (WI 123)
@@ -1167,23 +835,17 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: 123 }),
     );
 
-    const result = await simulateChainCreation({
-      client,
+    const output = await runChainPrs(client, config, {
       repo,
       workItemIds,
       strategy: "feature-chain",
       baseBranch: "main",
       prefix: "feature",
-      trackerName: config.chain.tracker_name,
-      config: config as any,
     });
 
     // Tracker should use custom name
-    expect(result.tracker).toBeDefined();
-    expect(result.tracker!.branchName).toBe("custom/my-tracker");
-
-    // First PR targets the custom tracker
-    expect(result.steps[0].parentRefName).toBe("refs/heads/custom/my-tracker");
+    expect(output).toContain("custom/my-tracker");
+    expect(output).toContain("#100");
   });
 
   it("uses provided branchNames instead of deriving them", async () => {
@@ -1206,7 +868,7 @@ describe("ado_chain_prs: full chain simulation", () => {
       }),
     );
 
-    // Mock: getBranchTip
+    // Mock: getBranchTip (base)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ value: [{ objectId: "abc123" }] }),
     );
@@ -1214,6 +876,11 @@ describe("ado_chain_prs: full chain simulation", () => {
     // Mock: getRepository
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ id: "repo-id", project: { id: "proj-id" } }),
+    );
+
+    // Mock: getBranchTip (WI 123 — not found)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
     );
 
     // Mock: createBranch (WI 123)
@@ -1236,6 +903,11 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: 123 }),
     );
 
+    // Mock: getBranchTip (WI 124 — not found)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
+    );
+
     // Mock: createBranch (WI 124)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse([{ name: `refs/heads/${branchNames[1]}`, success: true, objectId: "abc123", oldObjectId: "0".repeat(40) }]),
@@ -1256,25 +928,22 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: 124 }),
     );
 
-    const result = await simulateChainCreation({
-      client,
+    const output = await runChainPrs(client, config, {
       repo,
       workItemIds,
       strategy: "stacked",
       baseBranch: "main",
       prefix: "feature",
-      trackerName: "",
-      config: config as any,
       branchNames,
     });
 
-    // Custom branch names used
-    expect(result.steps[0].branchName).toBe("feature/123-custom-branch-name");
-    expect(result.steps[1].branchName).toBe("feature/124-another-custom-name");
-    expect(result.created).toBe(2);
+    // Custom branch names accepted (2 PRs created successfully)
+    expect(output).toContain("2 PRs");
+    expect(output).toContain("PR #101");
+    expect(output).toContain("PR #102");
   });
 
-  it("aborts on tracker branch creation failure (global error)", async () => {
+  it("aborts on tracker branch creation failure (returns error string)", async () => {
     const client = makeClient();
     const config = ProjectConfigSchema.parse({});
     const repo = "my-repo";
@@ -1289,7 +958,7 @@ describe("ado_chain_prs: full chain simulation", () => {
       }),
     );
 
-    // Mock: getBranchTip
+    // Mock: getBranchTip (base)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ value: [{ objectId: "abc123" }] }),
     );
@@ -1299,26 +968,23 @@ describe("ado_chain_prs: full chain simulation", () => {
       jsonResponse({ id: "repo-id", project: { id: "proj-id" } }),
     );
 
-    // Mock: createBranch (tracker) — FAILS
+    // Mock: createBranch (tracker) — FAILS with 409 Conflict
     fetchSpy.mockResolvedValueOnce(
       new Response("Conflict", { status: 409, headers: { "Content-Type": "text/plain" } }),
     );
 
-    await expect(
-      simulateChainCreation({
-        client,
-        repo,
-        workItemIds,
-        strategy: "feature-chain",
-        baseBranch: "main",
-        prefix: "feature",
-        trackerName: "",
-        config: config as any,
-      }),
-    ).rejects.toThrow("Failed to create tracker branch");
+    const output = await runChainPrs(client, config, {
+      repo,
+      workItemIds,
+      strategy: "feature-chain",
+      baseBranch: "main",
+      prefix: "feature",
+    });
+
+    expect(output).toContain("Failed to create tracker branch");
   });
 
-  it("aborts on tracker PR creation failure with orphan warning", async () => {
+  it("aborts on tracker PR creation failure with orphan warning (returns error string)", async () => {
     const client = makeClient();
     const config = ProjectConfigSchema.parse({});
     const repo = "my-repo";
@@ -1333,7 +999,7 @@ describe("ado_chain_prs: full chain simulation", () => {
       }),
     );
 
-    // Mock: getBranchTip
+    // Mock: getBranchTip (base)
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ value: [{ objectId: "abc123" }] }),
     );
@@ -1353,18 +1019,119 @@ describe("ado_chain_prs: full chain simulation", () => {
       new Response("Bad Request", { status: 400, headers: { "Content-Type": "text/plain" } }),
     );
 
-    await expect(
-      simulateChainCreation({
-        client,
-        repo,
-        workItemIds,
-        strategy: "feature-chain",
-        baseBranch: "main",
-        prefix: "feature",
-        trackerName: "",
-        config: config as any,
+    const output = await runChainPrs(client, config, {
+      repo,
+      workItemIds,
+      strategy: "feature-chain",
+      baseBranch: "main",
+      prefix: "feature",
+    });
+
+    expect(output).toContain("Orphaned tracker branch exists");
+  });
+
+  it("feature-chain: mid-chain PR failure uses backward-walk to find PR target", async () => {
+    // Step 1 PR creation fails, step 2 PR should target the tracker branch
+    // (not step 1's branch, since step 1 has no PR). Verifies the backward-walk logic.
+    const client = makeClient();
+    const config = ProjectConfigSchema.parse({ pr: { include_chain_context: false } });
+    const repo = "my-repo";
+    const workItemIds = [10, 20, 30];
+
+    // Mock: getWorkItemsByIds
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({
+        value: [
+          { id: 10, fields: { "System.Title": "Step One" } },
+          { id: 20, fields: { "System.Title": "Step Two" } },
+          { id: 30, fields: { "System.Title": "Step Three" } },
+        ],
       }),
-    ).rejects.toThrow("Orphaned tracker branch exists");
+    );
+
+    // Mock: getBranchTip (base)
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ value: [{ objectId: "base-tip-111" }] }),
+    );
+
+    // Mock: getRepository
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ id: "repo-id", project: { id: "proj-id" } }),
+    );
+
+    // Mock: createBranch (tracker)
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse([{ name: "refs/heads/feature/step-one", success: true, objectId: "base-tip-111", oldObjectId: "0".repeat(40) }]),
+    );
+
+    // Mock: createPullRequest (tracker PR #100)
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ pullRequestId: 100, url: "https://example.com/pr/100" }),
+    );
+
+    // Step 0 (WI #10): getBranchTip → not found → createBranch → createPR succeeds
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse([{ name: "refs/heads/feature/10-step-one", success: true, objectId: "base-tip-111", oldObjectId: "0".repeat(40) }]),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ pullRequestId: 101, url: "https://example.com/pr/101" }),
+    );
+    // linkWorkItemToPr
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 10, relations: [] }));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 10 }));
+
+    // Step 1 (WI #20): getBranchTip → not found → createBranch → createPR FAILS
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse([{ name: "refs/heads/feature/20-step-two", success: true, objectId: "base-tip-111", oldObjectId: "0".repeat(40) }]),
+    );
+    // PR creation fails for step 1
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Server Error", { status: 500, headers: { "Content-Type": "text/plain" } }),
+    );
+
+    // Step 2 (WI #30): getBranchTip → not found → createBranch → createPR succeeds
+    // The PR target should be refs/heads/feature/10-step-one (step 0's branch) because
+    // step 1 has no PR (backward walk skips it)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } }),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse([{ name: "refs/heads/feature/30-step-three", success: true, objectId: "base-tip-111", oldObjectId: "0".repeat(40) }]),
+    );
+
+    let capturedTargetRef: string | undefined;
+    const origMock = fetchSpy.getMockImplementation();
+    // Capture the targetRefName from the PR creation call for step 2
+    fetchSpy.mockImplementationOnce(async (url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "POST" && String(url).includes("pullrequests")) {
+        const body = JSON.parse(init.body as string);
+        capturedTargetRef = body.targetRefName;
+      }
+      return jsonResponse({ pullRequestId: 103, url: "https://example.com/pr/103" });
+    });
+    // linkWorkItemToPr for step 2
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 30, relations: [] }));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 30 }));
+
+    const output = await runChainPrs(client, config, {
+      repo,
+      workItemIds,
+      strategy: "feature-chain",
+      baseBranch: "main",
+      prefix: "feature",
+    });
+
+    // Step 2's PR should target step 0's branch (backward walk skipped step 1 which has no PR)
+    expect(capturedTargetRef).toBe("refs/heads/feature/10-step-one");
+    expect(output).toContain("PR #103");
+    // Step 1 should show as error
+    expect(output).toContain("### Errors");
   });
 });
 
