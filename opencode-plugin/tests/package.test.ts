@@ -119,6 +119,13 @@ describe("package metadata", () => {
     expect(piSource).toContain("D.wi_related.name");
   });
 
+  it("pi-entry has parity for wi_create, wi_create_child, pr_create, pr_chain", () => {
+    expect(piSource).toContain(`name: D.wi_create.name`);
+    expect(piSource).toContain(`name: D.wi_create_child.name`);
+    expect(piSource).toContain(`name: D.pr_create.name`);
+    expect(piSource).toContain(`name: D.pr_chain.name`);
+  });
+
   it("pi-entry tool executors pass ctx.cwd to getConfig (no bare getConfig() calls)", () => {
     // The commands section (registerCommand) legitimately calls getConfig(ctx.cwd) — that's fine.
     // What must NOT exist is a bare getConfig() call inside a registerTool execute block.

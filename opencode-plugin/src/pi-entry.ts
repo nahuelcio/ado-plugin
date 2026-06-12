@@ -62,6 +62,9 @@ import {
   workItemIdFromUrl,
 } from "./ado-client.js";
 import { D } from "./tool-descriptions.js";
+import { loadProjectConfig } from "./chain-config.js";
+import { validateWorkItemCreation } from "./wi-create.js";
+import { runCreatePr, runChainPrs } from "./chain-runner.js";
 
 // ─── Config Loading (Pi-specific) ────────────────────────────────────────
 
@@ -680,6 +683,210 @@ export default function adoExtension(pi: ExtensionAPI) {
       }
       out += detailBlocks.join("\n---\n");
       return { content: [{ type: "text", text: out }], details: {} };
+    },
+  });
+
+  // ─── Tool: ado_wi_create ─────────────────────────────────────────
+
+  pi.registerTool({
+    name: D.wi_create.name,
+    label: "ADO Create Work Item",
+    description: D.wi_create.description,
+    parameters: Type.Object({
+      type: Type.Optional(Type.String({ description: D.wi_create.params.type })),
+      title: Type.String({ description: D.wi_create.params.title }),
+      description: Type.Optional(Type.String({ description: D.wi_create.params.description })),
+      areaPath: Type.Optional(Type.String({ description: D.wi_create.params.areaPath })),
+      iterationPath: Type.Optional(Type.String({ description: D.wi_create.params.iterationPath })),
+      priority: Type.Optional(Type.Number({ description: D.wi_create.params.priority })),
+      assignedTo: Type.Optional(Type.String({ description: D.wi_create.params.assignedTo })),
+      state: Type.Optional(Type.String({ description: D.wi_create.params.state })),
+      tags: Type.Optional(Type.String({ description: D.wi_create.params.tags })),
+      parentId: Type.Optional(Type.Number({ description: D.wi_create.params.parentId })),
+      customFields: Type.Optional(Type.Record(Type.String(), Type.String(), { description: D.wi_create.params.customFields })),
+      profile: Type.Optional(Type.String({ description: D.wi_create.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const adoConfig = getConfig(ctx.cwd);
+      const { client: ado, userId } = await createClientFromConfig(adoConfig, params.profile);
+      const config = await loadProjectConfig(ctx.cwd);
+
+      const effectiveType = params.type ?? config.work_item.create.default_type;
+
+      const fields: Record<string, unknown> = { title: params.title };
+      if (params.description !== undefined) fields.description = params.description;
+      if (params.areaPath !== undefined) fields.areaPath = params.areaPath;
+      if (params.iterationPath !== undefined) fields.iterationPath = params.iterationPath;
+      if (params.priority !== undefined) fields.priority = params.priority;
+      if (params.assignedTo !== undefined) fields.assignedTo = params.assignedTo;
+      if (params.state !== undefined) fields.state = params.state;
+      if (params.tags !== undefined) fields.tags = params.tags;
+
+      const validationError = validateWorkItemCreation(config, { type: effectiveType, fields, parentId: params.parentId });
+      if (validationError) return { content: [{ type: "text", text: `Error: ${validationError}` }], isError: true, details: {} };
+
+      if (!fields.state) fields.state = config.work_item.create.default_state;
+      if (config.work_item.create.auto_assign && !fields.assignedTo) fields.assignedTo = userId.displayName;
+
+      const parentRelation = params.parentId
+        ? { parentId: params.parentId, relationType: "System.LinkTypes.Hierarchy-Reverse" }
+        : undefined;
+
+      let wi: any;
+      try {
+        wi = await ado.createWorkItem(effectiveType, fields, parentRelation, params.customFields);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Error creating work item: ${msg}` }], isError: true, details: {} };
+      }
+
+      const wiId = wi.id;
+      const wiFields = wi.fields ?? {};
+      const lines: string[] = [
+        `## Work Item Created: #${wiId}`,
+        `- Type: ${wiFields["System.WorkItemType"] ?? effectiveType}`,
+        `- Title: ${wiFields["System.Title"] ?? params.title}`,
+        `- State: ${wiFields["System.State"] ?? fields.state}`,
+      ];
+      if (wiFields["Microsoft.VSTS.Common.Priority"] !== undefined) lines.push(`- Priority: ${wiFields["Microsoft.VSTS.Common.Priority"]}`);
+      if (wiFields["System.AssignedTo"]?.displayName) lines.push(`- Assigned: ${wiFields["System.AssignedTo"].displayName}`);
+      if (wiFields["System.AreaPath"]) lines.push(`- Area: ${wiFields["System.AreaPath"]}`);
+      if (params.parentId) lines.push(`- Parent: #${params.parentId}`);
+
+      return { content: [{ type: "text", text: lines.join("\n") }], details: {} };
+    },
+  });
+
+  // ─── Tool: ado_wi_create_child ────────────────────────────────────
+
+  pi.registerTool({
+    name: D.wi_create_child.name,
+    label: "ADO Create Child Work Item",
+    description: D.wi_create_child.description,
+    parameters: Type.Object({
+      parentId: Type.Number({ description: D.wi_create_child.params.parentId }),
+      type: Type.Optional(Type.String({ description: D.wi_create_child.params.type })),
+      title: Type.String({ description: D.wi_create_child.params.title }),
+      description: Type.Optional(Type.String({ description: D.wi_create_child.params.description })),
+      areaPath: Type.Optional(Type.String({ description: D.wi_create_child.params.areaPath })),
+      iterationPath: Type.Optional(Type.String({ description: D.wi_create_child.params.iterationPath })),
+      priority: Type.Optional(Type.Number({ description: D.wi_create_child.params.priority })),
+      assignedTo: Type.Optional(Type.String({ description: D.wi_create_child.params.assignedTo })),
+      state: Type.Optional(Type.String({ description: D.wi_create_child.params.state })),
+      tags: Type.Optional(Type.String({ description: D.wi_create_child.params.tags })),
+      customFields: Type.Optional(Type.Record(Type.String(), Type.String(), { description: D.wi_create_child.params.customFields })),
+      profile: Type.Optional(Type.String({ description: D.wi_create_child.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const adoConfig = getConfig(ctx.cwd);
+      const { client: ado, userId } = await createClientFromConfig(adoConfig, params.profile);
+      const config = await loadProjectConfig(ctx.cwd);
+
+      const effectiveType = params.type ?? config.work_item.create.default_type;
+
+      const fields: Record<string, unknown> = { title: params.title };
+      if (params.description !== undefined) fields.description = params.description;
+      if (params.areaPath !== undefined) fields.areaPath = params.areaPath;
+      if (params.iterationPath !== undefined) fields.iterationPath = params.iterationPath;
+      if (params.priority !== undefined) fields.priority = params.priority;
+      if (params.assignedTo !== undefined) fields.assignedTo = params.assignedTo;
+      if (params.state !== undefined) fields.state = params.state;
+      if (params.tags !== undefined) fields.tags = params.tags;
+
+      const validationError = validateWorkItemCreation(config, { type: effectiveType, fields, parentId: params.parentId });
+      if (validationError) return { content: [{ type: "text", text: `Error: ${validationError}` }], isError: true, details: {} };
+
+      if (!fields.state) fields.state = config.work_item.create.default_state;
+      if (config.work_item.create.auto_assign && !fields.assignedTo) fields.assignedTo = userId.displayName;
+
+      const parentRelation = { parentId: params.parentId, relationType: "System.LinkTypes.Hierarchy-Reverse" };
+
+      let wi: any;
+      try {
+        wi = await ado.createWorkItem(effectiveType, fields, parentRelation, params.customFields);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Error creating child work item: ${msg}` }], isError: true, details: {} };
+      }
+
+      const wiId = wi.id;
+      const wiFields = wi.fields ?? {};
+      const lines: string[] = [
+        `## Child Work Item Created: #${wiId}`,
+        `- Type: ${wiFields["System.WorkItemType"] ?? effectiveType}`,
+        `- Title: ${wiFields["System.Title"] ?? params.title}`,
+        `- State: ${wiFields["System.State"] ?? fields.state}`,
+        `- Parent: #${params.parentId}`,
+      ];
+      if (wiFields["Microsoft.VSTS.Common.Priority"] !== undefined) lines.push(`- Priority: ${wiFields["Microsoft.VSTS.Common.Priority"]}`);
+      if (wiFields["System.AssignedTo"]?.displayName) lines.push(`- Assigned: ${wiFields["System.AssignedTo"].displayName}`);
+      if (wiFields["System.AreaPath"]) lines.push(`- Area: ${wiFields["System.AreaPath"]}`);
+
+      return { content: [{ type: "text", text: lines.join("\n") }], details: {} };
+    },
+  });
+
+  // ─── Tool: ado_pr_create ─────────────────────────────────────────
+
+  pi.registerTool({
+    name: D.pr_create.name,
+    label: "ADO Create PR",
+    description: D.pr_create.description,
+    parameters: Type.Object({
+      repo: Type.String({ description: D.pr_create.params.repo }),
+      sourceBranch: Type.String({ description: D.pr_create.params.sourceBranch }),
+      targetBranch: Type.String({ description: D.pr_create.params.targetBranch }),
+      title: Type.String({ description: D.pr_create.params.title }),
+      description: Type.Optional(Type.String({ description: D.pr_create.params.description })),
+      workItemIds: Type.Optional(Type.Array(Type.Number(), { description: D.pr_create.params.workItemIds })),
+      isDraft: Type.Optional(Type.Boolean()),
+      profile: Type.Optional(Type.String({ description: D.pr_create.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const adoConfig = getConfig(ctx.cwd);
+      const { client: ado } = await createClientFromConfig(adoConfig, params.profile);
+      const config = await loadProjectConfig(ctx.cwd);
+      const result = await runCreatePr(ado, config, {
+        repo: params.repo,
+        sourceBranch: params.sourceBranch,
+        targetBranch: params.targetBranch,
+        title: params.title,
+        description: params.description,
+        workItemIds: params.workItemIds,
+        isDraft: params.isDraft,
+      });
+      return { content: [{ type: "text", text: result }], details: {} };
+    },
+  });
+
+  // ─── Tool: ado_pr_chain ──────────────────────────────────────────
+
+  pi.registerTool({
+    name: D.pr_chain.name,
+    label: "ADO Chain PRs",
+    description: D.pr_chain.description,
+    parameters: Type.Object({
+      repo: Type.String({ description: D.pr_chain.params.repo }),
+      workItemIds: Type.Array(Type.Number(), { description: D.pr_chain.params.workItemIds, minItems: 1, maxItems: 50 }),
+      baseBranch: Type.Optional(Type.String({ description: D.pr_chain.params.baseBranch })),
+      strategy: Type.Optional(StringEnum(["feature-chain", "stacked"], { description: D.pr_chain.params.strategy })),
+      prefix: Type.Optional(Type.String({ description: D.pr_chain.params.prefix })),
+      branchNames: Type.Optional(Type.Array(Type.String(), { description: D.pr_chain.params.branchNames })),
+      profile: Type.Optional(Type.String({ description: D.pr_chain.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const adoConfig = getConfig(ctx.cwd);
+      const { client: ado } = await createClientFromConfig(adoConfig, params.profile);
+      const config = await loadProjectConfig(ctx.cwd);
+      const result = await runChainPrs(ado, config, {
+        repo: params.repo,
+        workItemIds: params.workItemIds,
+        baseBranch: params.baseBranch,
+        strategy: params.strategy as "feature-chain" | "stacked" | undefined,
+        prefix: params.prefix,
+        branchNames: params.branchNames,
+      });
+      return { content: [{ type: "text", text: result }], details: {} };
     },
   });
 
