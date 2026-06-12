@@ -130,4 +130,12 @@ describe("package metadata", () => {
     expect(adoClientSource).toContain("formatComments");
     expect(sharedSource).toContain("System.Description");
   });
+
+  it("stripJsonComments only treats double quotes as string delimiters (not apostrophes)", () => {
+    // Must not open a string context on single-quote characters
+    expect(cliSource).not.toContain(`char === "'" ||`);
+    expect(cliSource).not.toContain(`=== "'" || char === '"'`);
+    // Must open string context only on double-quote
+    expect(cliSource).toContain(`if (char === '"') {`);
+  });
 });

@@ -102,7 +102,7 @@ function readConfig(path: string): Record<string, unknown> {
   return JSON.parse(stripJsonComments(raw.replace(/^\uFEFF/, "")));
 }
 
-function stripJsonComments(input: string): string {
+export function stripJsonComments(input: string): string {
   let out = "";
   let inString = false;
   let stringQuote = "";
@@ -125,7 +125,7 @@ function stripJsonComments(input: string): string {
       continue;
     }
 
-    if (char === '"' || char === "'") {
+    if (char === '"') {
       inString = true;
       stringQuote = char;
       out += char;
