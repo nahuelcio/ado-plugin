@@ -416,3 +416,65 @@ describe("AdoClient.getRepository", () => {
     expect(calledUrl).toContain("my%20repo");
   });
 });
+
+// ─── getWorkItemsByIds batching ──────────────────────────────────────────────
+
+describe("AdoClient.getWorkItemsByIds batching", () => {
+  let client: AdoClient;
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    client = makeClient();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it("returns empty array for empty input without making any requests", async () => {
+    const result = await client.getWorkItemsByIds([]);
+    expect(result).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("makes a single request when ids <= 200", async () => {
+    const ids = Array.from({ length: 200 }, (_, i) => i + 1);
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ value: ids.map((id) => ({ id, fields: {} })) }),
+    );
+
+    const result = await client.getWorkItemsByIds(ids);
+    expect(result).toHaveLength(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const calledUrl = fetchSpy.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("workitems?ids=");
+  });
+
+  it("splits ids > 200 into two parallel requests and concatenates results", async () => {
+    // 201 ids — should produce chunk of 200 + chunk of 1
+    const ids = Array.from({ length: 201 }, (_, i) => i + 1);
+    fetchSpy
+      .mockResolvedValueOnce(
+        jsonResponse({ value: ids.slice(0, 200).map((id) => ({ id, fields: {} })) }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ value: [{ id: 201, fields: {} }] }),
+      );
+
+    const result = await client.getWorkItemsByIds(ids);
+    expect(result).toHaveLength(201);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    // First chunk should start at 1 and not include 201 (URL may be percent-encoded)
+    const url1 = fetchSpy.mock.calls[0][0] as string;
+    const decoded1 = decodeURIComponent(url1);
+    expect(decoded1).toContain("ids=1,2,3");
+    expect(decoded1).not.toContain(",201");
+
+    // Second chunk should have only id 201
+    const url2 = fetchSpy.mock.calls[1][0] as string;
+    const decoded2 = decodeURIComponent(url2);
+    expect(decoded2).toContain("ids=201");
+  });
+});

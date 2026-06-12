@@ -341,12 +341,19 @@ export class AdoClient {
       "System.AssignedTo", "Microsoft.VSTS.Common.Priority", "System.ChangedDate",
     ];
     const fieldsParam = (fields ?? defaultFields).join(",");
-    const data = await this.request<{ value: any[] }>(
-      `/_apis/wit/workitems?ids=${ids.join(",")}&fields=${fieldsParam}`,
-      undefined,
-      "org",
+    // ADO caps the ids parameter at 200 per request — batch accordingly.
+    const chunks = chunkArray(ids, 200);
+    const results = await Promise.all(
+      chunks.map(async (chunk) => {
+        const data = await this.request<{ value: any[] }>(
+          `/_apis/wit/workitems?ids=${chunk.join(",")}&fields=${fieldsParam}`,
+          undefined,
+          "org",
+        );
+        return data.value ?? [];
+      }),
     );
-    return data.value ?? [];
+    return results.flat();
   }
 
   async getWorkItem(id: number, options?: { expandRelations?: boolean }): Promise<any> {
