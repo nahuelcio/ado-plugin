@@ -1247,6 +1247,40 @@ export const tui: TuiPlugin = async (api: TuiPluginApi, options) => {
     return inFlight;
   };
 
+  // ── Sync selection from profile-store without ADO fetch ──
+  const syncSelectionFromStore = (): void => {
+    const current = data();
+    if (current.status !== "ready") return;
+
+    const persistedView = getViewMode();
+    const persistedPr = getSelectedPr();
+    const persistedWi = getSelectedWi();
+
+    const newPr = persistedPr
+      ? [...current.assignedToMe, ...current.myPRs].find(
+          (p) => p.repo === persistedPr.repo && p.id === persistedPr.prId,
+        ) ?? current.selectedPr
+      : current.selectedPr;
+
+    const newWi = persistedWi && persistedWi.profileName === current.profileName
+      ? current.workItems.find((w) => w.id === persistedWi.wiId) ?? current.selectedWi
+      : current.selectedWi;
+
+    // Only update signal when something actually changed to avoid unnecessary rerenders
+    if (
+      newPr === current.selectedPr &&
+      newWi === current.selectedWi &&
+      persistedView === current.sidebarView
+    ) return;
+
+    setData((prev) => ({
+      ...prev,
+      selectedPr: newPr ?? null,
+      selectedWi: newWi ?? null,
+      sidebarView: persistedView,
+    }));
+  };
+
   // ── Initial load ──
   void refresh();
 
@@ -1257,10 +1291,10 @@ export const tui: TuiPlugin = async (api: TuiPluginApi, options) => {
 
   // ── Event-driven refresh ──
   const unsubEvent = api.event.on("session.updated", () => {
-    setTimeout(() => { void refresh(); }, 150);
+    setTimeout(() => syncSelectionFromStore(), 150);
   });
   const unsubMsg = api.event.on("message.updated", () => {
-    setTimeout(() => { void refresh(); }, 150);
+    setTimeout(() => syncSelectionFromStore(), 150);
   });
 
   // ── Commands (command palette + DialogSelect) ──
