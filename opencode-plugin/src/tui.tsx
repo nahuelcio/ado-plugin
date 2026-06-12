@@ -524,7 +524,7 @@ function SidebarContentView(props: {
         </box>
       </Match>
       <Match when={d().status === "ready"}>
-        <box gap={0}>
+        <box gap={0} flexGrow={1}>
           {/* Header */}
           <text wrapMode="none" fg={props.api.theme.current.text}>
             <b>{`Azure DevOps (${d().profileName})`}</b>
@@ -567,6 +567,7 @@ function SidebarContentView(props: {
                         <box
                           flexDirection="row"
                           focusable
+                          width="100%"
                           onMouseDown={() => {
                             setSelectedPr(pr.repo, pr.id);
                             setData((prev) => ({ ...prev, selectedPr: pr }));
@@ -594,6 +595,7 @@ function SidebarContentView(props: {
                         <box
                           flexDirection="row"
                           focusable
+                          width="100%"
                           onMouseDown={() => {
                             setSelectedPr(pr.repo, pr.id);
                             setData((prev) => ({ ...prev, selectedPr: pr }));
@@ -647,6 +649,7 @@ function SidebarContentView(props: {
                           flexDirection="row"
                           focusable
                           focused={idx === d().focusIndex}
+                          width="100%"
                           backgroundColor={focused ? props.api.theme.current.backgroundElement : undefined}
                           onMouseDown={(event) => handleMouseAction(event, () => toggleStateGroup(target.state, idx))}
                           onMouseOver={() => {
@@ -670,6 +673,7 @@ function SidebarContentView(props: {
                           flexDirection="row"
                           focusable
                           focused={idx === d().focusIndex}
+                          width="100%"
                           backgroundColor={focused ? props.api.theme.current.backgroundElement : undefined}
                           onMouseDown={(event) => handleMouseAction(event, () => selectWorkItem(wi))}
                           onMouseOver={() => {
@@ -710,6 +714,7 @@ function SidebarContentView(props: {
                           flexDirection="row"
                           focusable
                           focused={idx === d().focusIndex}
+                          width="100%"
                           backgroundColor={focused ? props.api.theme.current.backgroundElement : undefined}
                           onMouseDown={(event) => handleMouseAction(event, () => toggleStateGroup(target.state, idx))}
                           onMouseOver={() => {
@@ -733,6 +738,7 @@ function SidebarContentView(props: {
                           flexDirection="row"
                           focusable
                           focused={idx === d().focusIndex}
+                          width="100%"
                           backgroundColor={focused ? props.api.theme.current.backgroundElement : undefined}
                           onMouseDown={(event) => handleMouseAction(event, () => selectWorkItem(fb))}
                           onMouseOver={() => {
