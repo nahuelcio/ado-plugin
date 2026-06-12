@@ -357,6 +357,23 @@ async function writeAdoConfig(configPath: string, defaults?: Record<string, stri
   const requireWorkItem = await yesNo("Require work items for PRs?", d["require_work_item"] !== "false");
   const defaultDraft = await yesNo("Create PRs as draft by default?", d["default_draft"] === "true");
 
+  // Work item creation settings
+  console.log();
+  console.log(`  ${bold("── Work Item Creation ──")}`);
+  console.log();
+  const wiCreateEnabled = await yesNo("Allow work item creation from plugin?");
+  const wiAllowedTypesStr = await ask("Allowed WI types (comma-separated, empty = all)", d["allowed_types"] ?? "");
+  const wiAllowedTypes = wiAllowedTypesStr
+    ? wiAllowedTypesStr.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const wiRequiredFieldsStr = await ask("Required fields for WI creation (comma-separated)", d["required_fields"] ?? "title");
+  const wiRequiredFields = wiRequiredFieldsStr
+    ? wiRequiredFieldsStr.split(",").map((s) => s.trim()).filter(Boolean)
+    : ["title"];
+  const wiDefaultState = await ask("Default WI state", d["default_state"] ?? "New");
+  const wiAutoAssign = await yesNo("Auto-assign WI to creator?", false);
+  const wiRequireParent = await yesNo("Require parent WI for creation?", false);
+
   const toml = `# .adoconfig.toml — Project-level ADO conventions
 
 [chain]
@@ -379,6 +396,14 @@ default_draft = ${defaultDraft}
 [work_item]
 auto_transition = false
 target_state = "In Dev"
+
+[work_item.create]
+enabled = ${wiCreateEnabled}
+allowed_types = [${wiAllowedTypes.map((t) => `"${t}"`).join(", ")}]
+required_fields = [${wiRequiredFields.map((f) => `"${f}"`).join(", ")}]
+default_state = "${wiDefaultState}"
+auto_assign = ${wiAutoAssign}
+require_parent = ${wiRequireParent}
 `;
 
   writeFileSync(configPath, toml, "utf-8");

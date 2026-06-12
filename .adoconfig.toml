@@ -1,0 +1,22 @@
+# .adoconfig.toml — Project-level ADO conventions
+
+[chain]
+strategy = "feature-chain"        # "feature-chain" | "stacked"
+base_branch = "dev"
+max_length = 10
+prefix = "feature"
+
+[branch]
+allowed_types = ["feature", "fix", "hotfix", "chore", "refactor"]
+slug_max_length = 40
+require_wi_id = true
+
+[pr]
+require_work_item = true
+include_chain_context = true
+review_budget = 400
+default_draft = true
+
+[work_item]
+auto_transition = false
+target_state = "In Dev"

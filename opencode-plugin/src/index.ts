@@ -55,6 +55,7 @@ import {
 import { loadProjectConfig } from "./chain-config.js";
 import { BranchNameSchema, type ChainResult, type ChainStep, type GitPullRequest } from "./chain-types.js";
 import { slugify, deriveBranchName, buildChainContext, formatChainResult } from "./chain-helpers.js";
+import { validateWorkItemCreation } from "./wi-create.js";
 
 // All business logic (AdoClient + helpers) is now in ./ado-client.js
 // This file only contains OpenCode-specific tool registration and config loading.
@@ -509,6 +510,206 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           const types = await ado.getWorkItemTypes();
           const out = types.map((t: any) => `- ${t.name}${t.description ? `: ${t.description.slice(0, 60)}` : ""}`).join("\n");
           return `## WI Types (${name})\n${out}\n${types.length} types`;
+        },
+      },
+
+      ado_create_work_item: {
+        description: "Create a work item. Validates against project config rules (allowed types, required fields, parent requirement).",
+        args: {
+          type: z.string().describe("Work item type (e.g. Task, User Story, Bug)"),
+          title: z.string().describe("Work item title"),
+          description: z.string().optional().describe("Work item description (Markdown)"),
+          areaPath: z.string().optional().describe("Area path (e.g. 'Project\\Area')"),
+          iterationPath: z.string().optional().describe("Iteration/sprint path"),
+          priority: z.number().optional().describe("Priority (1-4)"),
+          assignedTo: z.string().optional().describe("Assign to user (email or display name)"),
+          state: z.string().optional().describe("Initial state (default: from config or 'New')"),
+          tags: z.string().optional().describe("Tags (semicolon-separated)"),
+          parentId: z.number().optional().describe("Parent work item ID (creates hierarchy link)"),
+          profile: z.string().optional().describe("Profile override"),
+        },
+        async execute({
+          type,
+          title,
+          description,
+          areaPath,
+          iterationPath,
+          priority,
+          assignedTo,
+          state,
+          tags,
+          parentId,
+          profile,
+        }: {
+          type: string;
+          title: string;
+          description?: string;
+          areaPath?: string;
+          iterationPath?: string;
+          priority?: number;
+          assignedTo?: string;
+          state?: string;
+          tags?: string;
+          parentId?: number;
+          profile?: string;
+        }) {
+          const { client: ado, userId } = await createClient(profile);
+          const config = await loadProjectConfig(process.cwd());
+
+          // Build fields object from args
+          const fields: Record<string, unknown> = { title };
+          if (description !== undefined) fields.description = description;
+          if (areaPath !== undefined) fields.areaPath = areaPath;
+          if (iterationPath !== undefined) fields.iterationPath = iterationPath;
+          if (priority !== undefined) fields.priority = priority;
+          if (assignedTo !== undefined) fields.assignedTo = assignedTo;
+          if (state !== undefined) fields.state = state;
+          if (tags !== undefined) fields.tags = tags;
+
+          // Validate against project config rules
+          const validationError = validateWorkItemCreation(config, { type, fields, parentId });
+          if (validationError) return `Error: ${validationError}`;
+
+          // Apply config defaults
+          if (!fields.state) {
+            fields.state = config.work_item.create.default_state;
+          }
+          if (config.work_item.create.auto_assign && !fields.assignedTo) {
+            fields.assignedTo = userId.displayName;
+          }
+
+          // Create work item (parent relation handled by AdoClient)
+          const parentRelation = parentId
+            ? { parentId, relationType: "System.LinkTypes.Hierarchy-Reverse" }
+            : undefined;
+
+          let wi: any;
+          try {
+            wi = await ado.createWorkItem(type, fields, parentRelation);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return `Error creating work item: ${msg}`;
+          }
+
+          const wiId = wi.id;
+          const wiFields = wi.fields ?? {};
+          const lines: string[] = [
+            `## Work Item Created: #${wiId}`,
+            `- Type: ${wiFields["System.WorkItemType"] ?? type}`,
+            `- Title: ${wiFields["System.Title"] ?? title}`,
+            `- State: ${wiFields["System.State"] ?? fields.state}`,
+          ];
+          if (wiFields["Microsoft.VSTS.Common.Priority"] !== undefined) {
+            lines.push(`- Priority: ${wiFields["Microsoft.VSTS.Common.Priority"]}`);
+          }
+          if (wiFields["System.AssignedTo"]?.displayName) {
+            lines.push(`- Assigned: ${wiFields["System.AssignedTo"].displayName}`);
+          }
+          if (wiFields["System.AreaPath"]) {
+            lines.push(`- Area: ${wiFields["System.AreaPath"]}`);
+          }
+          if (parentId) {
+            lines.push(`- Parent: #${parentId}`);
+          }
+
+          return lines.join("\n");
+        },
+      },
+
+      ado_create_child_work_item: {
+        description: "Create a child work item under a parent. Convenience wrapper for ado_create_work_item with parentId required.",
+        args: {
+          parentId: z.number().describe("Parent work item ID"),
+          type: z.string().describe("Work item type (e.g. Task, Bug)"),
+          title: z.string().describe("Work item title"),
+          description: z.string().optional().describe("Description"),
+          areaPath: z.string().optional().describe("Area path"),
+          iterationPath: z.string().optional().describe("Iteration/sprint path"),
+          priority: z.number().optional().describe("Priority (1-4)"),
+          assignedTo: z.string().optional().describe("Assign to user"),
+          state: z.string().optional().describe("Initial state"),
+          tags: z.string().optional().describe("Tags (semicolon-separated)"),
+          profile: z.string().optional().describe("Profile override"),
+        },
+        async execute({
+          parentId,
+          type,
+          title,
+          description,
+          areaPath,
+          iterationPath,
+          priority,
+          assignedTo,
+          state,
+          tags,
+          profile,
+        }: {
+          parentId: number;
+          type: string;
+          title: string;
+          description?: string;
+          areaPath?: string;
+          iterationPath?: string;
+          priority?: number;
+          assignedTo?: string;
+          state?: string;
+          tags?: string;
+          profile?: string;
+        }) {
+          const { client: ado, userId } = await createClient(profile);
+          const config = await loadProjectConfig(process.cwd());
+
+          const fields: Record<string, unknown> = { title };
+          if (description !== undefined) fields.description = description;
+          if (areaPath !== undefined) fields.areaPath = areaPath;
+          if (iterationPath !== undefined) fields.iterationPath = iterationPath;
+          if (priority !== undefined) fields.priority = priority;
+          if (assignedTo !== undefined) fields.assignedTo = assignedTo;
+          if (state !== undefined) fields.state = state;
+          if (tags !== undefined) fields.tags = tags;
+
+          // Validate — parentId always present, so require_parent is satisfied
+          const validationError = validateWorkItemCreation(config, { type, fields, parentId });
+          if (validationError) return `Error: ${validationError}`;
+
+          // Apply config defaults
+          if (!fields.state) {
+            fields.state = config.work_item.create.default_state;
+          }
+          if (config.work_item.create.auto_assign && !fields.assignedTo) {
+            fields.assignedTo = userId.displayName;
+          }
+
+          const parentRelation = { parentId, relationType: "System.LinkTypes.Hierarchy-Reverse" };
+
+          let wi: any;
+          try {
+            wi = await ado.createWorkItem(type, fields, parentRelation);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return `Error creating child work item: ${msg}`;
+          }
+
+          const wiId = wi.id;
+          const wiFields = wi.fields ?? {};
+          const lines: string[] = [
+            `## Child Work Item Created: #${wiId}`,
+            `- Type: ${wiFields["System.WorkItemType"] ?? type}`,
+            `- Title: ${wiFields["System.Title"] ?? title}`,
+            `- State: ${wiFields["System.State"] ?? fields.state}`,
+            `- Parent: #${parentId}`,
+          ];
+          if (wiFields["Microsoft.VSTS.Common.Priority"] !== undefined) {
+            lines.push(`- Priority: ${wiFields["Microsoft.VSTS.Common.Priority"]}`);
+          }
+          if (wiFields["System.AssignedTo"]?.displayName) {
+            lines.push(`- Assigned: ${wiFields["System.AssignedTo"].displayName}`);
+          }
+          if (wiFields["System.AreaPath"]) {
+            lines.push(`- Area: ${wiFields["System.AreaPath"]}`);
+          }
+
+          return lines.join("\n");
         },
       },
 

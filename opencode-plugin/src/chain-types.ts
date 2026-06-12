@@ -32,6 +32,14 @@ export interface ProjectConfig {
   work_item: {
     auto_transition: boolean;
     target_state: string;
+    create: {
+      enabled: boolean;
+      allowed_types: string[];
+      required_fields: string[];
+      default_state: string;
+      auto_assign: boolean;
+      require_parent: boolean;
+    };
   };
 }
 
@@ -142,6 +150,17 @@ export const ProjectConfigSchema = z.object({
     z.object({
       auto_transition: z.boolean().default(false),
       target_state: z.string().default("In Dev"),
+      create: z.preprocess(
+        (val) => val ?? {},
+        z.object({
+          enabled: z.boolean().default(true),
+          allowed_types: z.array(z.string()).default([]),
+          required_fields: z.array(z.string()).default(["title"]),
+          default_state: z.string().default("New"),
+          auto_assign: z.boolean().default(false),
+          require_parent: z.boolean().default(false),
+        }),
+      ),
     }),
   ),
 });

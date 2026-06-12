@@ -28,6 +28,7 @@ import {
   getSelectedPr,
 } from "./profile-store.js";
 import type { CreatePrOptions, GitRefUpdateResult, GitPullRequest } from "./chain-types.js";
+import { buildFieldPatchOps } from "./wi-create.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -224,6 +225,50 @@ export class AdoClient {
     const url = this.buildUrl(`/_apis/wit/workitems/${id}`, "org");
     const res = await fetch(url, {
       method: "PATCH",
+      headers: {
+        Authorization: this.authHeader,
+        Accept: "application/json",
+        "Content-Type": "application/json-patch+json",
+      },
+      body: JSON.stringify(patchOps),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      const truncated = body.length > 200 ? `${body.slice(0, 200)}...` : body;
+      throw new Error(`ADO ${res.status}: ${truncated}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Create a work item.
+   * POST /_apis/wit/workitems/${type}?api-version=7.1
+   * Content-Type: application/json-patch+json
+   */
+  async createWorkItem(
+    type: string,
+    fields: Record<string, unknown>,
+    parentRelation?: { parentId: number; relationType: string },
+  ): Promise<any> {
+    const patchOps = buildFieldPatchOps(fields);
+
+    if (parentRelation) {
+      patchOps.push({
+        op: "add",
+        path: "/relations/-",
+        value: {
+          rel: parentRelation.relationType,
+          url: `${this.orgUrl}/_apis/wit/workItems/${parentRelation.parentId}`,
+        },
+      });
+    }
+
+    const url = this.buildUrl(
+      `/_apis/wit/workitems/${encodeURIComponent(type)}`,
+      "project",
+    );
+    const res = await fetch(url, {
+      method: "POST",
       headers: {
         Authorization: this.authHeader,
         Accept: "application/json",
