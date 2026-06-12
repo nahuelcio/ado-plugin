@@ -1,12 +1,12 @@
 {
   "name": "@cioffinahuel/opencode-ado",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Azure DevOps plugin for OpenCode/Pi — PR reviews, profiles, sidebar panel",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "opencode-ado": "./dist/bin/opencode-ado.js"
+    "opencodeado": "./dist/bin/opencode-ado.js"
   },
   "exports": {
     ".": {
