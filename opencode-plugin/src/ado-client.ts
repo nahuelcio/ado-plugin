@@ -27,6 +27,7 @@ import {
   setSelectedPr,
   getSelectedPr,
 } from "./profile-store.js";
+import type { CreatePrOptions, GitRefUpdateResult, GitPullRequest } from "./chain-types.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -306,6 +307,91 @@ export class AdoClient {
       undefined,
       "org",
     );
+  }
+
+  // ─── Chained PRs methods ──────────────────────────────────────────
+
+  async getBranchTip(repo: string, branch: string): Promise<string> {
+    const filter = `heads/${branch}`;
+    const data = await this.request<{ value: Array<{ objectId: string }> }>(
+      `/git/repositories/${encodeURIComponent(repo)}/refs?filter=${encodeURIComponent(filter)}`,
+    );
+    if (!data.value?.length) {
+      throw new Error(`Branch "${branch}" not found in repo "${repo}"`);
+    }
+    return data.value[0].objectId;
+  }
+
+  async createBranch(
+    repo: string,
+    branchName: string,
+    commitSha: string,
+  ): Promise<GitRefUpdateResult> {
+    const refName = `refs/heads/${branchName}`;
+    const body = [
+      {
+        name: refName,
+        oldObjectId: "0000000000000000000000000000000000000000",
+        newObjectId: commitSha,
+      },
+    ];
+    const data = await this.request<GitRefUpdateResult[]>(
+      `/git/repositories/${encodeURIComponent(repo)}/refs`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    const result = data[0];
+    if (!result.success) {
+      throw new Error(
+        `Failed to create branch "${branchName}": ${result.updateStatus ?? "unknown error"}`,
+      );
+    }
+    return result;
+  }
+
+  async createPullRequest(repo: string, options: CreatePrOptions): Promise<GitPullRequest> {
+    return this.request(
+      `/git/repositories/${encodeURIComponent(repo)}/pullrequests`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          sourceRefName: options.sourceRefName,
+          targetRefName: options.targetRefName,
+          title: options.title,
+          description: options.description ?? "",
+          isDraft: options.isDraft ?? false,
+        }),
+      },
+    );
+  }
+
+  async linkWorkItemToPr(
+    workItemId: number,
+    prArtifactUrl: string,
+  ): Promise<void> {
+    const wi = await this.getWorkItem(workItemId, { expandRelations: true });
+    const existing = (wi.relations ?? []).some(
+      (r: any) => r.url === prArtifactUrl,
+    );
+    if (existing) return;
+
+    await this.updateWorkItem(workItemId, [
+      {
+        op: "add",
+        path: "/relations/-",
+        value: {
+          rel: "ArtifactLink",
+          url: prArtifactUrl,
+          attributes: { name: "Pull Request" },
+        },
+      },
+    ]);
+  }
+
+  async getRepository(repo: string): Promise<{ repoId: string; projectId: string }> {
+    const data = await this.request<{ id: string; project: { id: string } }>(
+      `/git/repositories/${encodeURIComponent(repo)}`,
+    );
+    return { repoId: data.id, projectId: data.project.id };
   }
 }
 
