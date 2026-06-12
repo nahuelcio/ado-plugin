@@ -70,6 +70,7 @@ interface SidebarData {
   error?: string;
   lastSuccessTime?: Date;
   isStale?: boolean;
+  workItemsTruncated?: boolean;
 }
 
 // ─── Config reading ────────────────────────────────────────────────────────
@@ -202,6 +203,7 @@ async function fetchPRData(
   // ── Work Items ──
   const workItems: WorkItemSummary[] = [];
   const qaFeedbacks: WorkItemSummary[] = [];
+  let workItemsTruncated = false;
 
   // Try fetching WIs (will fail gracefully for profiles without WI access)
   try {
@@ -235,6 +237,7 @@ async function fetchPRData(
     if (wiqlRes.ok) {
       const wiqlData = (await wiqlRes.json()) as { workItems?: Array<{ id: number }> };
       const wiIds = (wiqlData.workItems ?? []).map((wi) => wi.id);
+      workItemsTruncated = wiIds.length > 200;
       if (wiIds.length > 0) {
         const fields = "System.Id,System.Title,System.State,System.WorkItemType,System.AssignedTo,Microsoft.VSTS.Common.Priority,System.ChangedDate";
         const batchUrl = new URL(`${orgUrl}/_apis/wit/workitems`);
@@ -278,6 +281,7 @@ async function fetchPRData(
     myPRs: mine,
     workItems,
     qaFeedbacks,
+    workItemsTruncated,
   };
 }
 
@@ -649,6 +653,9 @@ function SidebarContentView(props: {
             {d().sidebarView === "wis" && (
               <>
                 <text fg="yellow">{`Work Items Assigned to You (${String(d().workItems.length)})`}</text>
+                {d().workItemsTruncated && (
+                  <text fg="yellow">{"(showing first 200)"}</text>
+                )}
                 {d().workItems.length === 0 && <text fg="gray">No work items assigned</text>}
                 {d().workItems.length > 0 && (() => {
                   const targets = buildFocusTargets(d().workItems, d().collapsedStates);
@@ -799,7 +806,7 @@ function SidebarContentView(props: {
             const wi = d().selectedWi!;
             return (
               <box gap={0}>
-                <text fg="cyan">{"── Selected WI ──"}</text>
+                <text fg="cyan">{d().sidebarView === "qa" ? "── Selected QA Feedback ──" : "── Selected WI ──"}</text>
                 <text wrapMode="none" fg={props.api.theme.current.text}>
                   {`#${String(wi.id)} ${wi.title}`}
                 </text>
@@ -811,7 +818,7 @@ function SidebarContentView(props: {
                 </text>
                 {wi.changedDate && (
                   <text wrapMode="none" fg="gray">
-                    {`Changed: ${wi.changedDate}`}
+                    {`Changed: ${relativeTime(wi.changedDate)}`}
                   </text>
                 )}
               </box>
