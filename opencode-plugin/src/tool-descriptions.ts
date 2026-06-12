@@ -13,7 +13,7 @@ export const D = {
   },
   pr_get: {
     name: "ado_pr_get",
-    description: "PR details. Auto-discovers by PR ID across profiles",
+    description: "PR details",
     params: {
       repo: "Omit to auto-discover by PR ID",
       prId: "PR ID",
@@ -22,7 +22,7 @@ export const D = {
   },
   pr_threads: {
     name: "ado_pr_threads",
-    description: "Show PR comment threads. Auto-discovers by PR ID across profiles",
+    description: "Show PR comment threads",
     params: {
       repo: "Omit to auto-discover by PR ID",
       prId: "PR ID",
@@ -35,7 +35,6 @@ export const D = {
     params: {
       repo: "Omit to auto-discover by PR ID",
       prId: "PR ID",
-      comment: "Comment text",
       filePath: "File path e.g. /src/app.ts",
       line: "1-based line number",
       profile: "Profile override",
@@ -47,14 +46,12 @@ export const D = {
     params: {
       repo: "Omit to auto-discover by PR ID",
       prId: "PR ID",
-      vote: "Vote",
-      comment: "Comment text",
       profile: "Profile override",
     },
   },
   pr_select: {
     name: "ado_pr_select",
-    description: "Select PR in sidebar (persists). Auto-discovers repo when only prId is provided.",
+    description: "Select PR in sidebar (persists)",
     params: {
       repo: "Repository name (omit to auto-discover)",
       prId: "PR ID",
@@ -63,7 +60,7 @@ export const D = {
   },
   pr_diff: {
     name: "ado_pr_diff",
-    description: "List changed files in PR. Auto-discovers by PR ID across profiles",
+    description: "List changed files in PR",
     params: {
       repo: "Omit to auto-discover by PR ID",
       prId: "PR ID",
@@ -98,7 +95,6 @@ export const D = {
       repo: "Repository name",
       sourceBranch: "Source branch name (without refs/heads/ prefix)",
       targetBranch: "Target branch name (without refs/heads/ prefix)",
-      title: "PR title",
       description: "PR description (Markdown)",
       workItemIds: "Work item IDs to link to this PR",
       isDraft: "Create as draft",
@@ -120,7 +116,7 @@ export const D = {
   },
   wi_list: {
     name: "ado_wi_list",
-    description: "List work items. Filter: state, assignedTo, tag, type. Partial match (e.g. 'QA Feedback' matches 'QA Feedback · Bug')",
+    description: "List work items. Filter: state, assignedTo, tag, type",
     params: {
       state: "State filter (e.g. Active, New)",
       assignedTo: "Assigned user (default: @Me)",
@@ -143,8 +139,6 @@ export const D = {
     params: {
       id: "Work item ID",
       state: "New state (e.g. Active, Closed)",
-      priority: "New priority",
-      comment: "Comment text",
       profile: "Profile override",
     },
   },
@@ -153,7 +147,6 @@ export const D = {
     description: "Add comment to work item",
     params: {
       id: "Work item ID",
-      comment: "Comment text",
       profile: "Profile override",
     },
   },
@@ -169,7 +162,6 @@ export const D = {
     description: "Create work item (validated against .adoconfig.toml rules)",
     params: {
       type: "Work item type (e.g. Task, User Story, Bug). Defaults to config default_type.",
-      title: "Work item title",
       description: "Work item description (Markdown)",
       areaPath: "Area path (e.g. 'Project\\Area')",
       iterationPath: "Iteration/sprint path",
@@ -184,12 +176,11 @@ export const D = {
   },
   wi_create_child: {
     name: "ado_wi_create_child",
-    description: "Convenience wrapper for ado_wi_create with parentId required.",
+    description: "Create a child work item under a parent",
     params: {
       parentId: "Parent work item ID",
       type: "Work item type (e.g. Task, Bug). Defaults to config default_type.",
-      title: "Work item title",
-      description: "Description",
+      description: "Description (Markdown)",
       areaPath: "Area path",
       iterationPath: "Iteration/sprint path",
       priority: "Priority (1-4)",

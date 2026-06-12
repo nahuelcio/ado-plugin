@@ -59,7 +59,7 @@ export interface ChainStep {
   error?: string;
 }
 
-/** Result of an ado_chain_prs invocation. */
+/** Result of an ado_pr_chain invocation. */
 export interface ChainResult {
   strategy: "feature-chain" | "stacked";
   tracker?: {

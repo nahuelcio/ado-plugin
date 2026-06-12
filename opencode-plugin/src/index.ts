@@ -154,7 +154,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         args: {
           repo: z.string().optional().describe(D.pr_comment.params.repo),
           prId: z.number().optional().describe(D.pr_comment.params.prId),
-          comment: z.string().describe(D.pr_comment.params.comment),
+          comment: z.string(),
           filePath: z.string().optional().describe(D.pr_comment.params.filePath),
           line: z.number().optional().describe(D.pr_comment.params.line),
           profile: z.string().optional().describe(D.pr_comment.params.profile),
@@ -175,8 +175,8 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         args: {
           repo: z.string().optional().describe(D.pr_vote.params.repo),
           prId: z.number().optional().describe(D.pr_vote.params.prId),
-          vote: z.enum(["approve", "reject", "wait", "suggestions"]).describe(D.pr_vote.params.vote),
-          comment: z.string().optional().describe(D.pr_vote.params.comment),
+          vote: z.enum(["approve", "reject", "wait", "suggestions"]),
+          comment: z.string().optional(),
           profile: z.string().optional().describe(D.pr_vote.params.profile),
         },
         async execute({ repo, prId, vote: voteStr, comment, profile }: { repo?: string; prId?: number; vote: string; comment?: string; profile?: string }) {
@@ -453,7 +453,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           id: z.number().describe(D.wi_update.params.id),
           state: z.string().optional().describe(D.wi_update.params.state),
           priority: z.number().optional(),
-          comment: z.string().optional().describe(D.wi_update.params.comment),
+          comment: z.string().optional(),
           profile: z.string().optional().describe(D.wi_update.params.profile),
         },
         async execute({ id, state, priority, comment, profile }: { id: number; state?: string; priority?: number; comment?: string; profile?: string }) {
@@ -473,7 +473,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         description: D.wi_comment.description,
         args: {
           id: z.number().describe(D.wi_comment.params.id),
-          comment: z.string().describe(D.wi_comment.params.comment),
+          comment: z.string(),
           profile: z.string().optional().describe(D.wi_comment.params.profile),
         },
         async execute({ id, comment, profile }: { id: number; comment: string; profile?: string }) {
@@ -498,7 +498,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         description: D.wi_create.description,
         args: {
           type: z.string().optional().describe(D.wi_create.params.type),
-          title: z.string().describe(D.wi_create.params.title),
+          title: z.string(),
           description: z.string().optional().describe(D.wi_create.params.description),
           areaPath: z.string().optional().describe(D.wi_create.params.areaPath),
           iterationPath: z.string().optional().describe(D.wi_create.params.iterationPath),
@@ -608,7 +608,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         args: {
           parentId: z.number().describe(D.wi_create_child.params.parentId),
           type: z.string().optional().describe(D.wi_create_child.params.type),
-          title: z.string().describe(D.wi_create_child.params.title),
+          title: z.string(),
           description: z.string().optional().describe(D.wi_create_child.params.description),
           areaPath: z.string().optional().describe(D.wi_create_child.params.areaPath),
           iterationPath: z.string().optional().describe(D.wi_create_child.params.iterationPath),
@@ -768,7 +768,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           repo: z.string().describe(D.pr_create.params.repo),
           sourceBranch: z.string().describe(D.pr_create.params.sourceBranch),
           targetBranch: z.string().describe(D.pr_create.params.targetBranch),
-          title: z.string().describe(D.pr_create.params.title),
+          title: z.string(),
           description: z.string().optional().describe(D.pr_create.params.description),
           workItemIds: z.array(z.number()).optional().describe(D.pr_create.params.workItemIds),
           isDraft: z.boolean().optional(),

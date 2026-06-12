@@ -238,7 +238,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     parameters: Type.Object({
       repo: Type.Optional(Type.String({ description: D.pr_comment.params.repo })),
       prId: Type.Optional(Type.Number({ description: D.pr_comment.params.prId })),
-      comment: Type.String({ description: D.pr_comment.params.comment }),
+      comment: Type.String(),
       filePath: Type.Optional(Type.String({ description: D.pr_comment.params.filePath })),
       line: Type.Optional(Type.Number({ description: D.pr_comment.params.line })),
       profile: Type.Optional(Type.String({ description: D.pr_comment.params.profile })),
@@ -266,8 +266,8 @@ export default function adoExtension(pi: ExtensionAPI) {
     parameters: Type.Object({
       repo: Type.Optional(Type.String({ description: D.pr_vote.params.repo })),
       prId: Type.Optional(Type.Number({ description: D.pr_vote.params.prId })),
-      vote: StringEnum(["approve", "reject", "wait", "suggestions"], { description: D.pr_vote.params.vote }),
-      comment: Type.Optional(Type.String({ description: D.pr_vote.params.comment })),
+      vote: StringEnum(["approve", "reject", "wait", "suggestions"]),
+      comment: Type.Optional(Type.String()),
       profile: Type.Optional(Type.String({ description: D.pr_vote.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -579,7 +579,7 @@ export default function adoExtension(pi: ExtensionAPI) {
       id: Type.Number({ description: D.wi_update.params.id }),
       state: Type.Optional(Type.String({ description: D.wi_update.params.state })),
       priority: Type.Optional(Type.Number()),
-      comment: Type.Optional(Type.String({ description: D.wi_update.params.comment })),
+      comment: Type.Optional(Type.String()),
       profile: Type.Optional(Type.String({ description: D.wi_update.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
@@ -605,7 +605,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     description: D.wi_comment.description,
     parameters: Type.Object({
       id: Type.Number({ description: D.wi_comment.params.id }),
-      comment: Type.String({ description: D.wi_comment.params.comment }),
+      comment: Type.String(),
       profile: Type.Optional(Type.String({ description: D.wi_comment.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
@@ -694,7 +694,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     description: D.wi_create.description,
     parameters: Type.Object({
       type: Type.Optional(Type.String({ description: D.wi_create.params.type })),
-      title: Type.String({ description: D.wi_create.params.title }),
+      title: Type.String(),
       description: Type.Optional(Type.String({ description: D.wi_create.params.description })),
       areaPath: Type.Optional(Type.String({ description: D.wi_create.params.areaPath })),
       iterationPath: Type.Optional(Type.String({ description: D.wi_create.params.iterationPath })),
@@ -766,7 +766,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     parameters: Type.Object({
       parentId: Type.Number({ description: D.wi_create_child.params.parentId }),
       type: Type.Optional(Type.String({ description: D.wi_create_child.params.type })),
-      title: Type.String({ description: D.wi_create_child.params.title }),
+      title: Type.String(),
       description: Type.Optional(Type.String({ description: D.wi_create_child.params.description })),
       areaPath: Type.Optional(Type.String({ description: D.wi_create_child.params.areaPath })),
       iterationPath: Type.Optional(Type.String({ description: D.wi_create_child.params.iterationPath })),
@@ -836,7 +836,7 @@ export default function adoExtension(pi: ExtensionAPI) {
       repo: Type.String({ description: D.pr_create.params.repo }),
       sourceBranch: Type.String({ description: D.pr_create.params.sourceBranch }),
       targetBranch: Type.String({ description: D.pr_create.params.targetBranch }),
-      title: Type.String({ description: D.pr_create.params.title }),
+      title: Type.String(),
       description: Type.Optional(Type.String({ description: D.pr_create.params.description })),
       workItemIds: Type.Optional(Type.Array(Type.Number(), { description: D.pr_create.params.workItemIds })),
       isDraft: Type.Optional(Type.Boolean()),

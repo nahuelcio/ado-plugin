@@ -578,7 +578,7 @@ async function runInit(_cwd: string): Promise<number> {
   console.log();
   console.log(bold("  Done! Restart OpenCode to activate the plugin."));
   console.log();
-  console.log(`  The LLM can now use: ${cyan("ado_prs")}, ${cyan("ado_pr <repo> <id>")}, ${cyan("ado_review <repo> <id> approve")}`);
+  console.log(`  The LLM can now use: ${cyan("ado_pr_list")}, ${cyan("ado_pr_get <repo> <id>")}, ${cyan("ado_pr_vote <repo> <id> approve")}`);
   console.log(`  The sidebar will show PRs pending your review.`);
   if (platform() === "win32") {
     console.log();
