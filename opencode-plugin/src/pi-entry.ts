@@ -153,7 +153,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     }
   });
 
-  // ─── Tool: ado_prs ──────────────────────────────────────────────
+  // ─── Tool: ado_pr_list ──────────────────────────────────────────────
 
   pi.registerTool({
     name: D.pr_list.name,
@@ -185,7 +185,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_pr ──────────────────────────────────────────────
+  // ─── Tool: ado_pr_get ──────────────────────────────────────────────
 
   pi.registerTool({
     name: D.pr_get.name,
@@ -256,7 +256,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_review ──────────────────────────────────────────
+  // ─── Tool: ado_pr_vote ──────────────────────────────────────────
 
   pi.registerTool({
     name: D.pr_vote.name,
@@ -288,7 +288,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_profile ──────────────────────────────────────────
+  // ─── Tool: ado_profile_get ──────────────────────────────────────────
 
   pi.registerTool({
     name: D.profile_get.name,
@@ -301,7 +301,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_profiles ──────────────────────────────────────────
+  // ─── Tool: ado_profile_list ──────────────────────────────────────────
 
   pi.registerTool({
     name: D.profile_list.name,
@@ -340,7 +340,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_select_pr ────────────────────────────────────────
+  // ─── Tool: ado_pr_select ────────────────────────────────────────
 
   pi.registerTool({
     name: D.pr_select.name,
@@ -447,7 +447,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_pr_review_context ────────────────────────────────
+  // ─── Tool: ado_pr_context ────────────────────────────────
 
   pi.registerTool({
     name: D.pr_context.name,
@@ -513,7 +513,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_work_items ────────────────────────────────────────
+  // ─── Tool: ado_wi_list ────────────────────────────────────────
 
   pi.registerTool({
     name: D.wi_list.name,
@@ -551,7 +551,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_work_item ──────────────────────────────────────────
+  // ─── Tool: ado_wi_get ──────────────────────────────────────────
 
   pi.registerTool({
     name: D.wi_get.name,
@@ -569,7 +569,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_work_item_update ──────────────────────────────────
+  // ─── Tool: ado_wi_update ──────────────────────────────────
 
   pi.registerTool({
     name: D.wi_update.name,
@@ -597,7 +597,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_work_item_comment ──────────────────────────────────
+  // ─── Tool: ado_wi_comment ──────────────────────────────────
 
   pi.registerTool({
     name: D.wi_comment.name,
@@ -615,7 +615,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_work_item_types ────────────────────────────────────
+  // ─── Tool: ado_wi_types ────────────────────────────────────
 
   pi.registerTool({
     name: D.wi_types.name,
@@ -630,7 +630,7 @@ export default function adoExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ─── Tool: ado_related_work_items ────────────────────────────────
+  // ─── Tool: ado_wi_related ────────────────────────────────
 
   pi.registerTool({
     name: D.wi_related.name,

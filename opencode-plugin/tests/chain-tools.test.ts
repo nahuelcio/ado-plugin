@@ -44,7 +44,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 // ─── ado_create_pr: Validation logic ────────────────────────────────────────
 
-describe("ado_create_pr: validation logic", () => {
+describe("ado_pr_create: validation logic", () => {
   it("rejects when require_work_item is true and no workItemIds provided", async () => {
     // Simulate the config check from ado_create_pr
     const config = ProjectConfigSchema.parse({ pr: { require_work_item: true } });
@@ -100,7 +100,7 @@ describe("ado_create_pr: validation logic", () => {
 
 // ─── ado_create_pr: Artifact URL construction ───────────────────────────────
 
-describe("ado_create_pr: artifact URL format", () => {
+describe("ado_pr_create: artifact URL format", () => {
   it("constructs correct vstfs URL with project, repo, and PR IDs", () => {
     const projectId = "proj-uuid-1234";
     const repoId = "repo-uuid-5678";
@@ -132,7 +132,7 @@ describe("ado_create_pr: artifact URL format", () => {
 
 // ─── ado_create_pr: Happy path with mocked AdoClient ────────────────────────
 
-describe("ado_create_pr: happy path with mocked AdoClient", () => {
+describe("ado_pr_create: happy path with mocked AdoClient", () => {
   let client: AdoClient;
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
@@ -340,7 +340,7 @@ describe("ado_create_pr: happy path with mocked AdoClient", () => {
 
 // ─── ado_chain_prs: Validation logic ────────────────────────────────────────
 
-describe("ado_chain_prs: validation logic", () => {
+describe("ado_pr_chain: validation logic", () => {
   it("rejects chain length exceeding max_length from config", () => {
     const config = ProjectConfigSchema.parse({ chain: { max_length: 5 } });
     const workItemIds = [1, 2, 3, 4, 5, 6]; // 6 > 5
@@ -438,7 +438,7 @@ describe("ado_chain_prs: validation logic", () => {
 
 // ─── ado_chain_prs: Full chain simulation (real runChainPrs) ─────────────────
 
-describe("ado_chain_prs: full chain simulation", () => {
+describe("ado_pr_chain: full chain simulation", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -1031,8 +1031,8 @@ describe("ado_chain_prs: full chain simulation", () => {
   });
 
   it("feature-chain: mid-chain PR failure uses backward-walk to find PR target", async () => {
-    // Step 1 PR creation fails, step 2 PR should target the tracker branch
-    // (not step 1's branch, since step 1 has no PR). Verifies the backward-walk logic.
+    // Step 1 (index 1) PR creation fails, so step 2 PR targets step 0's branch
+    // (not step 1's, since step 1 has no PR). Verifies the backward-walk logic.
     const client = makeClient();
     const config = ProjectConfigSchema.parse({ pr: { include_chain_context: false } });
     const repo = "my-repo";
@@ -1137,7 +1137,7 @@ describe("ado_chain_prs: full chain simulation", () => {
 
 // ─── ado_chain_prs: Config-driven behavior ──────────────────────────────────
 
-describe("ado_chain_prs: config-driven behavior", () => {
+describe("ado_pr_chain: config-driven behavior", () => {
   let tempDir: string;
 
   beforeEach(async () => {
