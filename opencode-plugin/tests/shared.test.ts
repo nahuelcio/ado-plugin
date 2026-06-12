@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   validatePAT,
-  escapeWiqlValue,
   reviewerMatchesUser,
   fmtPR,
   fmtWorkItem,
@@ -32,29 +31,6 @@ describe("PAT validation", () => {
   it("accepts valid PAT format", () => {
     const validPat = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_=";
     expect(() => validatePAT(validPat)).not.toThrow();
-  });
-});
-
-describe("WIQL escaping", () => {
-  it("escapes single quotes", () => {
-    expect(escapeWiqlValue("O'Reilly")).toBe("O''Reilly");
-  });
-
-  it("escapes backslashes", () => {
-    expect(escapeWiqlValue("path\\to\\file")).toBe("path\\\\to\\\\file");
-  });
-
-  it("escapes newlines", () => {
-    expect(escapeWiqlValue("line1\nline2")).toBe("line1\\nline2");
-  });
-
-  it("handles empty string", () => {
-    expect(escapeWiqlValue("")).toBe("");
-  });
-
-  it("handles null/undefined", () => {
-    expect(escapeWiqlValue(null as any)).toBe("");
-    expect(escapeWiqlValue(undefined as any)).toBe("");
   });
 });
 

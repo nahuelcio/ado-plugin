@@ -98,22 +98,6 @@ export function resolveOrgUrl(org: string): string {
 
 // ─── PAT helpers ──────────────────────────────────────────────────────────
 
-/** Escape values for WIQL queries to prevent SQL injection. */
-export function escapeWiqlValue(value: unknown): string {
-  // Basic escaping for Azure DevOps WIQL
-  if (value === null || value === undefined || typeof value !== 'string') {
-    return "";
-  }
-  return value
-    .replace(/'/g, "''")  // Escape single quotes
-    .replace(/\\/g, "\\\\")  // Escape backslashes
-    .replace(/\[/g, "\\[")  // Escape opening brackets (for field names)
-    .replace(/\]/g, "\\]")  // Escape closing brackets (for field names)
-    .replace(/\n/g, "\\n")  // Escape newlines
-    .replace(/\r/g, "\\r")  // Escape carriage returns
-    .replace(/\t/g, "\\t");  // Escape tabs
-}
-
 /** Validate Azure DevOps PAT format and length. Azure DevOps PATs are typically 52 characters. */
 export function validatePAT(pat: string): void {
   if (!pat || typeof pat !== 'string') {

@@ -546,8 +546,7 @@ export default function adoExtension(pi: ExtensionAPI) {
       if (params.state) conditions.push(`[System.State] = ${wiqlLiteral(params.state)}`);
       if (params.tag) conditions.push(`[System.Tags] CONTAINS ${wiqlLiteral(params.tag)}`);
       if (params.workItemType) {
-        const escaped = params.workItemType.replace(/'/g, "''");
-        conditions.push(`[System.WorkItemType] LIKE '%${escaped}%'`);
+        conditions.push(`[System.WorkItemType] CONTAINS ${wiqlLiteral(params.workItemType)}`);
       }
 
       const wiql = `SELECT [System.Id] FROM WorkItems WHERE ${conditions.join(" AND ")} ORDER BY [System.ChangedDate] DESC`;

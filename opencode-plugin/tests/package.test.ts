@@ -6,6 +6,7 @@ describe("package metadata", () => {
   const cliSource = readFileSync(new URL("../src/bin/opencode-ado.ts", import.meta.url), "utf-8");
   const tuiSource = readFileSync(new URL("../src/tui.tsx", import.meta.url), "utf-8");
   const serverSource = readFileSync(new URL("../src/index.ts", import.meta.url), "utf-8");
+  const piSource = readFileSync(new URL("../src/pi-entry.ts", import.meta.url), "utf-8");
   const sharedSource = readFileSync(new URL("../src/shared.ts", import.meta.url), "utf-8");
   const adoClientSource = readFileSync(new URL("../src/ado-client.ts", import.meta.url), "utf-8");
 
@@ -91,8 +92,13 @@ describe("package metadata", () => {
   it("supports generic work item tools with explicit workItemType filtering", () => {
     expect(serverSource).toContain("ado_work_items");
     expect(serverSource).toContain("workItemType");
-    expect(serverSource).toContain("[System.WorkItemType] LIKE");
-    expect(serverSource).toContain("workItemType");
+    expect(serverSource).toContain("[System.WorkItemType] CONTAINS");
+    expect(serverSource).not.toContain("[System.WorkItemType] LIKE");
+    // pi-entry must also use CONTAINS (not LIKE with manual wildcard injection)
+    expect(piSource).toContain("[System.WorkItemType] CONTAINS");
+    expect(piSource).not.toContain("[System.WorkItemType] LIKE");
+    // escapeWiqlValue was dead code — it must not exist in shared.ts
+    expect(sharedSource).not.toContain("escapeWiqlValue");
   });
 
   it("uses the documented WIT comments endpoint/version for QA feedback comments", () => {

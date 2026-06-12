@@ -436,8 +436,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
           if (state) conditions.push(`[System.State] = ${wiqlLiteral(state)}`);
           if (tag) conditions.push(`[System.Tags] CONTAINS ${wiqlLiteral(tag)}`);
           if (workItemType) {
-            const escaped = workItemType.replace(/'/g, "''");
-            conditions.push(`[System.WorkItemType] LIKE '%${escaped}%'`);
+            conditions.push(`[System.WorkItemType] CONTAINS ${wiqlLiteral(workItemType)}`);
           }
 
           const wiql = `SELECT [System.Id] FROM WorkItems WHERE ${conditions.join(" AND ")} ORDER BY [System.ChangedDate] DESC`;
