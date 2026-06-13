@@ -1348,7 +1348,7 @@ export const tui: TuiPlugin = async (api: TuiPluginApi, options) => {
 // ─── Module export ─────────────────────────────────────────────────────────
 
 const pluginModule: TuiPluginModule & { id: string } = {
-  id: "@nahuelcio/opencode-ado",
+  id: "@cioffinahuel/opencode-ado",
   tui,
 };
 

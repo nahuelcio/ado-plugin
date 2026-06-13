@@ -145,7 +145,7 @@ export function getPAT(envVarName: string): string {
   } catch { /* ignore: file read failures are non-critical */ }
 
   throw new Error(
-    `PAT not found or invalid. Either set env var ${envVarName} or run: npx @nahuelcio/opencode-ado init`,
+    `PAT not found or invalid. Either set env var ${envVarName} or run: npx @cioffinahuel/opencode-ado init`,
   );
 }
 

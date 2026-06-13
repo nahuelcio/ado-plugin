@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * CLI entry point for @nahuelcio/opencode-ado
+ * CLI entry point for @cioffinahuel/opencode-ado
  *
  * Usage:
- *   npx @nahuelcio/opencode-ado init    — Interactive setup wizard
- *   npx @nahuelcio/opencode-ado sync    — Register existing config in OpenCode + TUI
+ *   npx @cioffinahuel/opencode-ado init    — Interactive setup wizard
+ *   npx @cioffinahuel/opencode-ado sync    — Register existing config in OpenCode + TUI
  *   node dist/bin/opencode-ado.js sync-local — Register the local workspace build without publishing
- *   npx @nahuelcio/opencode-ado show    — Show current config
- *   npx @nahuelcio/opencode-ado --help
+ *   npx @cioffinahuel/opencode-ado show    — Show current config
+ *   npx @cioffinahuel/opencode-ado --help
  */
 
 import { realpathSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
 import { createInterface } from "node:readline";
 
-const PLUGIN_SPEC = "@nahuelcio/opencode-ado";
+const PLUGIN_SPEC = "@cioffinahuel/opencode-ado";
 const SCHEMA_URL = "https://opencode.ai/config.json";
 const TUI_SCHEMA_URL = "https://opencode.ai/tui.json";
 
@@ -305,7 +305,7 @@ function findExistingAdoConfig(config: Record<string, unknown>, tuiConfig?: Reco
 
 function normalizeAdoConfig(ado: Record<string, unknown>): Record<string, unknown> {
   if (!ado["profiles"] || typeof ado["profiles"] !== "object") {
-    throw new Error("No ADO profiles found. Run `npx @nahuelcio/opencode-ado init` first.");
+    throw new Error("No ADO profiles found. Run `npx @cioffinahuel/opencode-ado init` first.");
   }
   return ado;
 }
@@ -671,7 +671,7 @@ async function runShow(): Promise<number> {
     console.log(green("  ✓ PAT available"));
   } else {
     console.log(yellow("  ⚠ No PAT found"));
-    console.log("    Run: npx @nahuelcio/opencode-ado init");
+    console.log("    Run: npx @cioffinahuel/opencode-ado init");
   }
   console.log();
 
@@ -720,16 +720,16 @@ async function runSyncLocal(): Promise<number> {
 
 const USAGE = [
   "",
-  bold("  @nahuelcio/opencode-ado"),
+  bold("  @cioffinahuel/opencode-ado"),
   "  Azure DevOps plugin for OpenCode",
   "",
   "  Usage:",
-  `    ${cyan("npx @nahuelcio/opencode-ado init")}    Interactive setup wizard`,
-  `    ${cyan("npx @nahuelcio/opencode-ado config")}  Generate .adoconfig.toml for this project`,
-  `    ${cyan("npx @nahuelcio/opencode-ado sync")}    Register existing config in OpenCode + TUI`,
+  `    ${cyan("npx @cioffinahuel/opencode-ado init")}    Interactive setup wizard`,
+  `    ${cyan("npx @cioffinahuel/opencode-ado config")}  Generate .adoconfig.toml for this project`,
+  `    ${cyan("npx @cioffinahuel/opencode-ado sync")}    Register existing config in OpenCode + TUI`,
   `    ${cyan("node dist/bin/opencode-ado.js sync-local")}  Register local workspace build without publishing`,
-  `    ${cyan("npx @nahuelcio/opencode-ado show")}    Show current config`,
-  `    ${cyan("npx @nahuelcio/opencode-ado --help")}  Show this help`,
+  `    ${cyan("npx @cioffinahuel/opencode-ado show")}    Show current config`,
+  `    ${cyan("npx @cioffinahuel/opencode-ado --help")}  Show this help`,
   "",
 ].join("\n");
 

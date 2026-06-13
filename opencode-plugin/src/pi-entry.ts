@@ -15,7 +15,7 @@
  *   OR ~/.pi/agent/settings.json under "ado" key (global)
  *
  * Install:
- *   pi install npm:@nahuelcio/pi-ado
+ *   pi install npm:@cioffinahuel/opencode-ado
  *   OR copy to ~/.pi/agent/extensions/pi-ado/index.ts
  */
 

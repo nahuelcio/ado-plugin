@@ -29,7 +29,7 @@ describe("package metadata", () => {
 
   it("provides a non-interactive sync command for existing profiles", () => {
     expect(cliSource).toContain("function syncExistingConfig");
-    expect(cliSource).toContain("npx @nahuelcio/opencode-ado sync");
+    expect(cliSource).toContain("npx @cioffinahuel/opencode-ado sync");
     expect(cliSource).toContain('command === "sync-local"');
     expect(cliSource).toContain("getLocalPluginSpec");
     expect(cliSource).toContain('command === "sync"');

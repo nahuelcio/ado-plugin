@@ -803,7 +803,7 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
 };
 
 const pluginModule: PluginModule & { id: string } = {
-  id: "@nahuelcio/opencode-ado",
+  id: "@cioffinahuel/opencode-ado",
   server,
 };
 
