@@ -597,7 +597,7 @@ export async function createClientFromConfig(
     ? { name: profileName, profile: config.profiles[profileName] }
     : resolveActiveProfile(config);
 
-  const pat = getPAT(profile.patEnvVar);
+  const pat = getPAT(profile.patEnvVar, profile?.pat);
   const orgUrl = resolveOrgUrl(profile.org);
   const ado = new AdoClient(orgUrl, profile.project, pat);
   const userId = await ado.getUserIdentity();
@@ -618,7 +618,7 @@ export async function findPrAcrossProfiles(
 
   for (const [profileName, profile] of profilesToSearch) {
     try {
-      const pat = getPAT(profile.patEnvVar);
+      const pat = getPAT(profile.patEnvVar, profile?.pat);
       const orgUrl = resolveOrgUrl(profile.org);
       const ado = new AdoClient(orgUrl, profile.project, pat);
 

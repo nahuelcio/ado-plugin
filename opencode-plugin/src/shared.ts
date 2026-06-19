@@ -16,6 +16,8 @@ export interface AdoProfile {
   org: string;
   project: string;
   patEnvVar: string;
+  /** Direct PAT value (takes priority over patEnvVar when both present). */
+  pat?: string;
   repos: string[];
   default?: boolean;
   capabilities?: {
@@ -124,7 +126,13 @@ export function validatePAT(pat: string): void {
  * Get the PAT for the given env var name. Throws if not found or invalid.
  * Used by the server module which requires a PAT to function.
  */
-export function getPAT(envVarName: string): string {
+export function getPAT(envVarName: string, directPat?: string): string {
+  // 0. Direct PAT value takes priority
+  if (directPat) {
+    validatePAT(directPat);
+    return directPat;
+  }
+
   // 1. Try env var
   const fromEnv = process.env[envVarName];
   if (fromEnv) {
@@ -153,7 +161,17 @@ export function getPAT(envVarName: string): string {
  * Get the PAT for the given env var name. Returns undefined if not found or invalid.
  * Used by the TUI module which handles missing PATs gracefully.
  */
-export function getPATOptional(envVarName: string): string | undefined {
+export function getPATOptional(envVarName: string, directPat?: string): string | undefined {
+  // Direct PAT value takes priority
+  if (directPat) {
+    try {
+      validatePAT(directPat);
+      return directPat;
+    } catch {
+      // Invalid direct PAT, skip to fallback
+    }
+  }
+
   const fromEnv = process.env[envVarName];
   if (fromEnv) {
     try {
