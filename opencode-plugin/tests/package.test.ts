@@ -11,6 +11,8 @@ describe("package metadata", () => {
   const adoClientSource = readFileSync(new URL("../src/ado-client.ts", import.meta.url), "utf-8");
   // tool-descriptions.ts is the single source of truth for all tool names and descriptions
   const toolDescSource = readFileSync(new URL("../src/tool-descriptions.ts", import.meta.url), "utf-8");
+  // Command orchestration moved out of index.ts into the shared cli-commands module.
+  const cliCommandsSource = readFileSync(new URL("../src/cli-commands.ts", import.meta.url), "utf-8");
 
   it("publishes the TUI source expected by OpenCode", () => {
     expect(pkg.exports["./tui"].default).toBe("./dist/tui.tsx");
@@ -86,9 +88,9 @@ describe("package metadata", () => {
 
   it("supports standalone PR comments including optional file/line context", () => {
     expect(toolDescSource).toContain("ado_pr_comment"); // tool name in descriptions
-    expect(serverSource).toContain("filePath");
+    expect(cliCommandsSource).toContain("filePath");
     expect(adoClientSource).toContain("rightFileStart");
-    expect(serverSource).toContain("Provide filePath when specifying line.");
+    expect(cliCommandsSource).toContain("Provide filePath when specifying line.");
   });
 
   it("uses new ado_<resource>_<verb> naming scheme for all renamed tools", () => {
@@ -136,8 +138,8 @@ describe("package metadata", () => {
   it("supports generic work item tools with explicit workItemType filtering", () => {
     expect(toolDescSource).toContain("ado_wi_list");
     expect(serverSource).toContain("workItemType");
-    expect(serverSource).toContain("[System.WorkItemType] CONTAINS");
-    expect(serverSource).not.toContain("[System.WorkItemType] LIKE");
+    expect(cliCommandsSource).toContain("[System.WorkItemType] CONTAINS");
+    expect(cliCommandsSource).not.toContain("[System.WorkItemType] LIKE");
     // pi-entry must also use CONTAINS (not LIKE with manual wildcard injection)
     expect(piSource).toContain("[System.WorkItemType] CONTAINS");
     expect(piSource).not.toContain("[System.WorkItemType] LIKE");
@@ -162,7 +164,7 @@ describe("package metadata", () => {
 
   it("supports full related work item bundles for a parent work item", () => {
     expect(toolDescSource).toContain("ado_wi_related");
-    expect(serverSource).toContain("## Related for #");
+    expect(cliCommandsSource).toContain("## Related for #");
     expect(adoClientSource).toContain("formatWorkItemFullDetail");
     expect(adoClientSource).toContain("formatComments");
     expect(sharedSource).toContain("System.Description");

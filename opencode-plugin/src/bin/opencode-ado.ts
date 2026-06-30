@@ -16,6 +16,10 @@ import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
 import { createInterface } from "node:readline";
+import { AdoClient } from "../ado-client.js";
+import { loadProjectConfig } from "../chain-config.js";
+import type { AdoConfig, AdoProfile } from "../shared.js";
+import * as cmd from "../cli-commands.js";
 
 const PLUGIN_SPEC = "@cioffinahuel/opencode-ado";
 const SCHEMA_URL = "https://opencode.ai/config.json";
@@ -199,10 +203,312 @@ function loadStoredPAT(): string | null {
 
 interface ProfileConfig {
   org: string;
+  organization?: string;
   project: string;
-  patEnvVar: string;
-  repos: string[];
+  patEnvVar?: string;
+  pat?: string;
+  repos?: string[];
   default?: boolean;
+}
+
+interface LoadedAdoConfig {
+  defaultProfile?: string;
+  profiles: Record<string, ProfileConfig>;
+}
+
+async function loadAdoConfig(): Promise<LoadedAdoConfig | undefined> {
+  const projectConfig = await loadProjectConfig(process.cwd());
+  const projectAdo = asRecord(asRecord(projectConfig)?.ado);
+  if (projectAdo) {
+    const ado = normalizeAdoConfig(projectAdo) as unknown as LoadedAdoConfig;
+    if (Object.keys(ado.profiles ?? {}).length > 0) return ado;
+  }
+
+  const configPath = findConfigFile(getOpenCodeConfigDir());
+  if (!configPath) return undefined;
+  const config = readConfig(configPath);
+  const ado = asRecord(config["ado"]);
+  const profiles = asRecord(ado?.["profiles"]);
+  if (!ado || !profiles) return undefined;
+  return {
+    defaultProfile: typeof ado["defaultProfile"] === "string" ? ado["defaultProfile"] : undefined,
+    profiles: profiles as Record<string, ProfileConfig>,
+  };
+}
+
+function profileOrg(profile: ProfileConfig): string {
+  return profile.org ?? profile.organization ?? "";
+}
+
+function parseWorkItemId(input: string | undefined): number | undefined {
+  if (!input) return undefined;
+  const idText = input.match(/(?:^|[/?=&])(?:workItems?|workitems|id=)?(\d+)(?:$|[/?&#])/i)?.[1] ?? input;
+  const id = Number(idText);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+}
+
+// ─── Shared config + arg parsing for ADO operation commands ─────────────────
+
+/** Convert the CLI's loosely-typed loaded config into the shared AdoConfig. */
+function toSharedConfig(loaded: LoadedAdoConfig): AdoConfig {
+  const profiles: Record<string, AdoProfile> = {};
+  for (const [name, p] of Object.entries(loaded.profiles)) {
+    profiles[name] = {
+      org: profileOrg(p),
+      project: p.project,
+      patEnvVar: p.patEnvVar ?? "AZURE_DEVOPS_PAT",
+      ...(p.pat ? { pat: p.pat } : {}),
+      repos: p.repos ?? [],
+      ...(p.default ? { default: true } : {}),
+    };
+  }
+  return { defaultProfile: loaded.defaultProfile, profiles };
+}
+
+interface ParsedArgs {
+  positional: string[];
+  flags: Record<string, string | boolean>;
+}
+
+/** Minimal flag parser: positionals + `--key value` / `--flag` booleans. */
+function parseArgs(argv: string[]): ParsedArgs {
+  const positional: string[] = [];
+  const flags: Record<string, string | boolean> = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith("--")) {
+      const key = a.slice(2);
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith("--")) {
+        flags[key] = true;
+      } else {
+        flags[key] = next;
+        i++;
+      }
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, flags };
+}
+
+function flagStr(flags: ParsedArgs["flags"], key: string): string | undefined {
+  const v = flags[key];
+  return typeof v === "string" ? v : undefined;
+}
+
+function flagNum(flags: ParsedArgs["flags"], key: string): number | undefined {
+  const v = flagStr(flags, key);
+  if (v === undefined) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function flagBool(flags: ParsedArgs["flags"], key: string): boolean {
+  return flags[key] === true || flags[key] === "true";
+}
+
+function flagNumList(flags: ParsedArgs["flags"], key: string): number[] | undefined {
+  const v = flagStr(flags, key);
+  if (v === undefined) return undefined;
+  return v.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n));
+}
+
+function flagStrList(flags: ParsedArgs["flags"], key: string): string[] | undefined {
+  const v = flagStr(flags, key);
+  if (v === undefined) return undefined;
+  return v.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/** Resolve repo (non-numeric) and prId (numeric) from positionals, in any order. */
+function parsePrTarget(positional: string[]): { repo?: string; prId?: number } {
+  let repo: string | undefined;
+  let prId: number | undefined;
+  for (const p of positional) {
+    if (/^\d+$/.test(p)) prId = Number(p);
+    else repo = p;
+  }
+  return { repo, prId };
+}
+
+async function loadSharedConfig(): Promise<AdoConfig | undefined> {
+  const loaded = await loadAdoConfig();
+  if (!loaded || Object.keys(loaded.profiles ?? {}).length === 0) return undefined;
+  return toSharedConfig(loaded);
+}
+
+/** Load config, run a command that returns text, print it. Maps errors to exit code 1. */
+async function runCmd(fn: (config: AdoConfig) => Promise<string> | string): Promise<number> {
+  const config = await loadSharedConfig();
+  if (!config) {
+    console.log(yellow("No ADO profile configured. Run: ado init"));
+    return 1;
+  }
+  try {
+    console.log(await fn(config));
+    return 0;
+  } catch (err) {
+    console.log(yellow(err instanceof Error ? err.message : String(err)));
+    return 1;
+  }
+}
+
+// ─── Group dispatchers ──────────────────────────────────────────────────────
+
+async function runProfileGroup(argv: string[]): Promise<number> {
+  const sub = argv[0];
+  if (sub === "list") return runCmd((c) => cmd.profileList(c));
+  if (sub === "use") {
+    const name = argv[1];
+    if (!name) { console.log(yellow("Usage: ado profile use <name>")); return 1; }
+    return runCmd((c) => cmd.profileUse(c, { name }));
+  }
+  // Default / `get`: show active profile. Optional `--profile` override.
+  const { flags } = parseArgs(sub === "get" ? argv.slice(1) : argv);
+  return runCmd((c) => cmd.profileGet(c, { profile: flagStr(flags, "profile") }));
+}
+
+async function runPrGroup(argv: string[]): Promise<number> {
+  const sub = argv[0];
+  const { positional, flags } = parseArgs(argv.slice(1));
+  const profile = flagStr(flags, "profile");
+  const target = parsePrTarget(positional);
+
+  switch (sub) {
+    case "list":
+      return runCmd((c) => cmd.prList(c, { profile }));
+    case "get":
+      return runCmd((c) => cmd.prGet(c, { ...target, profile }));
+    case "threads":
+      return runCmd((c) => cmd.prThreads(c, { ...target, profile }));
+    case "diff":
+      return runCmd((c) => cmd.prDiff(c, { ...target, profile }));
+    case "context":
+      return runCmd((c) => cmd.prContext(c, { ...target, profile }));
+    case "comment": {
+      const comment = flagStr(flags, "comment");
+      if (!comment) { console.log(yellow("Usage: ado pr comment [repo] <prId> --comment <text> [--file <path>] [--line <n>]")); return 1; }
+      return runCmd((c) => cmd.prComment(c, { ...target, comment, filePath: flagStr(flags, "file"), line: flagNum(flags, "line"), profile }));
+    }
+    case "vote": {
+      const vote = positional.find((p) => ["approve", "reject", "wait", "suggestions"].includes(p));
+      const t = parsePrTarget(positional.filter((p) => p !== vote));
+      if (!vote) { console.log(yellow("Usage: ado pr vote [repo] <prId> <approve|reject|wait|suggestions> [--comment <text>]")); return 1; }
+      return runCmd((c) => cmd.prVote(c, { ...t, vote, comment: flagStr(flags, "comment"), profile }));
+    }
+    case "select": {
+      if (target.prId === undefined) { console.log(yellow("Usage: ado pr select [repo] <prId>")); return 1; }
+      return runCmd((c) => cmd.prSelect(c, { repo: target.repo, prId: target.prId!, profile }));
+    }
+    case "file": {
+      const path = flagStr(flags, "path") ?? positional.find((p) => !/^\d+$/.test(p) && p.includes("/"));
+      const t = parsePrTarget(positional.filter((p) => p !== path));
+      if (!path) { console.log(yellow("Usage: ado pr file --path <file> [repo] <prId> [--start <n>] [--end <n>]")); return 1; }
+      return runCmd((c) => cmd.prFile(c, { path, repo: t.repo, prId: t.prId, startLine: flagNum(flags, "start"), endLine: flagNum(flags, "end"), profile }));
+    }
+    case "create": {
+      const repo = flagStr(flags, "repo");
+      const sourceBranch = flagStr(flags, "source");
+      const targetBranch = flagStr(flags, "target");
+      const title = flagStr(flags, "title");
+      if (!repo || !sourceBranch || !targetBranch || !title) {
+        console.log(yellow("Usage: ado pr create --repo <r> --source <branch> --target <branch> --title <t> [--description <d>] [--wi 1,2] [--draft]"));
+        return 1;
+      }
+      return runCmd((c) => cmd.prCreate(c, {
+        repo, sourceBranch, targetBranch, title,
+        description: flagStr(flags, "description"),
+        workItemIds: flagNumList(flags, "wi"),
+        isDraft: flagBool(flags, "draft"),
+        profile,
+      }));
+    }
+    case "chain": {
+      const repo = flagStr(flags, "repo");
+      const workItemIds = flagNumList(flags, "wi");
+      if (!repo || !workItemIds?.length) {
+        console.log(yellow("Usage: ado pr chain --repo <r> --wi 1,2,3 [--base <branch>] [--strategy feature-chain|stacked] [--prefix <p>] [--branches a,b,c]"));
+        return 1;
+      }
+      const strategy = flagStr(flags, "strategy");
+      return runCmd((c) => cmd.prChain(c, {
+        repo, workItemIds,
+        baseBranch: flagStr(flags, "base"),
+        strategy: strategy === "stacked" || strategy === "feature-chain" ? strategy : undefined,
+        prefix: flagStr(flags, "prefix"),
+        branchNames: flagStrList(flags, "branches"),
+        profile,
+      }));
+    }
+    default:
+      console.log(yellow(`Unknown pr command: ${sub ?? "(none)"}`));
+      return 1;
+  }
+}
+
+async function runWiGroup(argv: string[]): Promise<number> {
+  const sub = argv[0];
+  const { positional, flags } = parseArgs(argv.slice(1));
+  const profile = flagStr(flags, "profile");
+
+  const wiCreateArgs = () => ({
+    type: flagStr(flags, "type"),
+    title: flagStr(flags, "title") ?? "",
+    description: flagStr(flags, "description"),
+    areaPath: flagStr(flags, "area"),
+    iterationPath: flagStr(flags, "iteration"),
+    priority: flagNum(flags, "priority"),
+    assignedTo: flagStr(flags, "assigned"),
+    state: flagStr(flags, "state"),
+    tags: flagStr(flags, "tags"),
+    profile,
+  });
+
+  switch (sub) {
+    case "list":
+      return runCmd((c) => cmd.wiList(c, {
+        state: flagStr(flags, "state"),
+        assignedTo: flagStr(flags, "assigned"),
+        tag: flagStr(flags, "tag"),
+        workItemType: flagStr(flags, "type"),
+        profile,
+      }));
+    case "get": {
+      const id = parseWorkItemId(positional[0]);
+      if (!id) { console.log(yellow("Usage: ado wi get <id>")); return 1; }
+      return runCmd((c) => cmd.wiGet(c, { id, profile }));
+    }
+    case "types":
+      return runCmd((c) => cmd.wiTypes(c, { profile }));
+    case "update": {
+      const id = parseWorkItemId(positional[0]);
+      if (!id) { console.log(yellow("Usage: ado wi update <id> [--state <s>] [--priority <n>] [--comment <text>]")); return 1; }
+      return runCmd((c) => cmd.wiUpdate(c, { id, state: flagStr(flags, "state"), priority: flagNum(flags, "priority"), comment: flagStr(flags, "comment"), profile }));
+    }
+    case "comment": {
+      const id = parseWorkItemId(positional[0]);
+      const comment = flagStr(flags, "comment");
+      if (!id || !comment) { console.log(yellow("Usage: ado wi comment <id> --comment <text>")); return 1; }
+      return runCmd((c) => cmd.wiComment(c, { id, comment, profile }));
+    }
+    case "related": {
+      const id = parseWorkItemId(positional[0]);
+      if (!id) { console.log(yellow("Usage: ado wi related <id> [--state <s>] [--type <t>]")); return 1; }
+      return runCmd((c) => cmd.wiRelated(c, { id, state: flagStr(flags, "state"), workItemType: flagStr(flags, "type"), profile }));
+    }
+    case "create": {
+      if (!flagStr(flags, "title")) { console.log(yellow("Usage: ado wi create --title <t> [--type <type>] [--description <d>] [--parent <id>] ...")); return 1; }
+      return runCmd((c) => cmd.wiCreate(c, { ...wiCreateArgs(), parentId: flagNum(flags, "parent") }));
+    }
+    case "create-child": {
+      const parentId = flagNum(flags, "parent");
+      if (!parentId || !flagStr(flags, "title")) { console.log(yellow("Usage: ado wi create-child --parent <id> --title <t> [--type <type>] ...")); return 1; }
+      return runCmd((c) => cmd.wiCreateChild(c, { ...wiCreateArgs(), parentId }));
+    }
+    default:
+      console.log(yellow(`Unknown wi command: ${sub ?? "(none)"}`));
+      return 1;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -535,7 +841,7 @@ async function runInit(_cwd: string): Promise<number> {
     const marker = p.default ? green(" (default)") : "";
     console.log(`  Profile: ${bold(name)}${marker}`);
     console.log(`    project: ${p.project}`);
-    console.log(`    repos:   ${p.repos.join(", ")}`);
+    console.log(`    repos:   ${(p.repos ?? []).join(", ")}`);
   }
   console.log();
 
@@ -661,7 +967,7 @@ async function runShow(): Promise<number> {
     console.log(`  ${bold(name)}${marker}`);
     console.log(`    org:     ${p.org}`);
     console.log(`    project: ${p.project}`);
-    console.log(`    repos:   ${p.repos.join(", ")}`);
+    console.log(`    repos:   ${(p.repos ?? []).join(", ")}`);
     console.log();
   }
 
@@ -729,6 +1035,9 @@ const USAGE = [
   `    ${cyan("npx @cioffinahuel/opencode-ado sync")}    Register existing config in OpenCode + TUI`,
   `    ${cyan("node dist/bin/opencode-ado.js sync-local")}  Register local workspace build without publishing`,
   `    ${cyan("npx @cioffinahuel/opencode-ado show")}    Show current config`,
+  `    ${cyan("ado profile [list|use <name>]")}          Show/list/switch ADO profile`,
+  `    ${cyan("ado pr <list|get|threads|diff|context|comment|vote|select|file|create|chain>")}`,
+  `    ${cyan("ado wi <list|get|types|update|comment|related|create|create-child>")}`,
   `    ${cyan("npx @cioffinahuel/opencode-ado --help")}  Show this help`,
   "",
 ].join("\n");
@@ -744,6 +1053,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (command === "sync" || command === "repair" || command === "install") return runSync();
   if (command === "sync-local") return runSyncLocal();
   if (command === "show") return runShow();
+  if (command === "profile") return runProfileGroup(argv.slice(1));
+  if (command === "pr") return runPrGroup(argv.slice(1));
+  if (command === "wi") return runWiGroup(argv.slice(1));
   console.log(`Unknown command: ${command}`);
   console.log(USAGE);
   return 1;
