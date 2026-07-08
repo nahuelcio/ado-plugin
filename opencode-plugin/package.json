@@ -1,6 +1,6 @@
 {
   "name": "@cioffinahuel/opencode-ado",
-  "version": "0.8.10",
+  "version": "0.8.11",
   "description": "Azure DevOps plugin for OpenCode/Pi — PR reviews, profiles, sidebar panel",
   "type": "module",
   "publishConfig": {
