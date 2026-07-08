@@ -224,7 +224,22 @@ async function loadAdoConfig(): Promise<LoadedAdoConfig | undefined> {
     if (Object.keys(ado.profiles ?? {}).length > 0) return ado;
   }
 
-  const configPath = findConfigFile(getOpenCodeConfigDir());
+  const configDir = getOpenCodeConfigDir();
+
+  // Standalone ado.json takes precedence over the inline `ado` block.
+  const adoJsonPath = join(configDir, "ado.json");
+  if (existsSync(adoJsonPath)) {
+    const adoJson = readConfig(adoJsonPath);
+    const adoJsonProfiles = asRecord(adoJson["profiles"]);
+    if (adoJsonProfiles && Object.keys(adoJsonProfiles).length > 0) {
+      return {
+        defaultProfile: typeof adoJson["defaultProfile"] === "string" ? adoJson["defaultProfile"] : undefined,
+        profiles: adoJsonProfiles as Record<string, ProfileConfig>,
+      };
+    }
+  }
+
+  const configPath = findConfigFile(configDir);
   if (!configPath) return undefined;
   const config = readConfig(configPath);
   const ado = asRecord(config["ado"]);
@@ -942,15 +957,25 @@ async function runConfig(cwd: string): Promise<number> {
 
 async function runShow(): Promise<number> {
   const configDir = getOpenCodeConfigDir();
-  const configPath = findConfigFile(configDir);
-  if (!configPath) {
-    console.log(yellow("  No opencode.json found in " + configDir));
-    return 1;
+
+  // Standalone ado.json takes precedence over the inline `ado` block.
+  const adoJsonPath = join(configDir, "ado.json");
+  let configPath: string | null = existsSync(adoJsonPath) ? adoJsonPath : null;
+  let ado: Record<string, unknown> | undefined = configPath
+    ? asRecord(readConfig(configPath))
+    : undefined;
+
+  if (!ado?.["profiles"]) {
+    configPath = findConfigFile(configDir);
+    if (!configPath) {
+      console.log(yellow("  No opencode.json found in " + configDir));
+      return 1;
+    }
+    const config = readConfig(configPath);
+    const plugins = Array.isArray(config["plugin"]) ? config["plugin"] as unknown[] : [];
+    ado = getPluginAdoConfig(plugins) ?? asRecord(config["ado"]);
   }
 
-  const config = readConfig(configPath);
-  const plugins = Array.isArray(config["plugin"]) ? config["plugin"] as unknown[] : [];
-  const ado = getPluginAdoConfig(plugins) ?? asRecord(config["ado"]);
   if (!ado?.["profiles"]) {
     console.log(yellow("  No ado.profiles configured"));
     return 1;
