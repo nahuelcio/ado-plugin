@@ -14,6 +14,7 @@ tools into context.
   configured profiles (or the sidebar-selected PR is used).
 - `--profile <name>` overrides the active profile on any command.
 - PR IDs and work item IDs are positional; flags carry everything else.
+- Work item commands accept either the numeric ID or the full work item URL.
 - Output is the same Markdown the plugin returns to the LLM.
 
 ## Profiles
@@ -59,7 +60,7 @@ tools into context.
 | --- | --- |
 | `ado init` | Interactive setup wizard (org, PAT, profiles, project rules). |
 | `ado config` | Generate/refresh `.adoconfig.toml` for this project. |
-| `ado sync` | Register existing config in OpenCode + TUI. |
+| `ado sync` | Register existing config in OpenCode + TUI (`repair`/`install` are aliases). |
 | `ado show` | Show the current OpenCode config and PAT status. |
 
 ## Common errors
