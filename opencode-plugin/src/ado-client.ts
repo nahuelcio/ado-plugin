@@ -242,7 +242,7 @@ export class AdoClient {
 
   /**
    * Create a work item.
-   * POST /_apis/wit/workitems/${type}?api-version=7.1
+   * POST /_apis/wit/workitems/$${type}?api-version=7.1
    * Content-Type: application/json-patch+json
    *
    * @param customFields - Arbitrary ADO fields as key-value pairs where keys are
@@ -268,7 +268,7 @@ export class AdoClient {
     }
 
     const url = this.buildUrl(
-      `/_apis/wit/workitems/${encodeURIComponent(type)}`,
+      `/_apis/wit/workitems/$${encodeURIComponent(type)}`,
       "project",
     );
     const res = await fetch(url, {

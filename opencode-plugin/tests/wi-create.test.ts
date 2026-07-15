@@ -149,13 +149,13 @@ describe("AdoClient.createWorkItem", () => {
     expect(result.fields["System.Title"]).toBe("Implement auth");
   });
 
-  it("sends POST to /_apis/wit/workitems/${type}?api-version=7.1", async () => {
+  it("sends POST to /_apis/wit/workitems/$${type}?api-version=7.1", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 1 }));
 
     await client.createWorkItem("Task", { title: "Test" });
 
     const calledUrl = fetchSpy.mock.calls[0][0] as string;
-    expect(calledUrl).toContain("/_apis/wit/workitems/Task");
+    expect(calledUrl).toContain("/_apis/wit/workitems/$Task");
     expect(calledUrl).toContain("api-version=7.1");
     // Project-scoped: URL must include the project name
     expect(calledUrl).toContain("/TestProject/");
