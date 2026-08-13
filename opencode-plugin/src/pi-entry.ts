@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 import type { AdoConfig } from "./shared.js";
+import * as cmd from "./cli-commands.js";
 import {
   asAdoConfig,
   shortBranch,
@@ -126,6 +127,12 @@ export default function adoExtension(pi: ExtensionAPI) {
     if (cachedConfig) return cachedConfig;
     cachedConfig = loadPiConfig(cwd);
     return cachedConfig;
+  }
+
+  /** Run a cli-commands function and wrap its text output as a Pi tool result. */
+  async function asToolResult<A>(fn: (config: AdoConfig, args: A) => Promise<string>, args: A) {
+    const text = await fn(getConfig(process.cwd()), args);
+    return { content: [{ type: "text" as const, text }], details: {} };
   }
 
   async function createClient(profileOverride?: string) {
@@ -577,23 +584,20 @@ export default function adoExtension(pi: ExtensionAPI) {
     description: D.wi_update.description,
     parameters: Type.Object({
       id: Type.Number({ description: D.wi_update.params.id }),
+      title: Type.Optional(Type.String({ description: D.wi_update.params.title })),
+      description: Type.Optional(Type.String({ description: D.wi_update.params.description })),
       state: Type.Optional(Type.String({ description: D.wi_update.params.state })),
-      priority: Type.Optional(Type.Number()),
-      comment: Type.Optional(Type.String()),
+      priority: Type.Optional(Type.Number({ description: D.wi_update.params.priority })),
+      assignedTo: Type.Optional(Type.String({ description: D.wi_update.params.assignedTo })),
+      areaPath: Type.Optional(Type.String({ description: D.wi_update.params.areaPath })),
+      iterationPath: Type.Optional(Type.String({ description: D.wi_update.params.iterationPath })),
+      tags: Type.Optional(Type.String({ description: D.wi_update.params.tags })),
+      comment: Type.Optional(Type.String({ description: D.wi_update.params.comment })),
+      customFields: Type.Optional(Type.Record(Type.String(), Type.String(), { description: D.wi_update.params.customFields })),
       profile: Type.Optional(Type.String({ description: D.wi_update.params.profile })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const { client: ado } = await createClient(params.profile);
-      const patchOps: Array<{ op: string; path: string; value: any }> = [];
-      if (params.state) patchOps.push({ op: "replace", path: "/fields/System.State", value: params.state });
-      if (params.priority !== undefined) patchOps.push({ op: "replace", path: "/fields/Microsoft.VSTS.Common.Priority", value: params.priority });
-      if (patchOps.length === 0 && !params.comment) {
-        return { content: [{ type: "text", text: "No changes. Provide state, priority, or comment." }], details: {} };
-      }
-      if (patchOps.length > 0) await ado.updateWorkItem(params.id, patchOps);
-      if (params.comment) await ado.addWorkItemComment(params.id, params.comment);
-      const parts = [params.state && `state→${params.state}`, params.priority !== undefined && `P→${params.priority}`, params.comment && "comment added"].filter(Boolean);
-      return { content: [{ type: "text", text: `#${params.id} updated: ${parts.join(", ")}` }], details: {} };
+      return asToolResult(cmd.wiUpdate, params);
     },
   });
 
@@ -887,6 +891,186 @@ export default function adoExtension(pi: ExtensionAPI) {
         branchNames: params.branchNames,
       });
       return { content: [{ type: "text", text: result }], details: {} };
+    },
+  });
+
+  // ─── Tool: ado_wi_fields ─────────────────────────────────
+
+  pi.registerTool({
+    name: D.wi_fields.name,
+    label: "ADO Work Item Fields",
+    description: D.wi_fields.description,
+    parameters: Type.Object({
+      type: Type.String({ description: D.wi_fields.params.type }),
+      profile: Type.Optional(Type.String({ description: D.wi_fields.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.wiFields, params);
+    },
+  });
+
+  // ─── Tool: ado_wi_link ───────────────────────────────────
+
+  pi.registerTool({
+    name: D.wi_link.name,
+    label: "ADO Link Work Items",
+    description: D.wi_link.description,
+    parameters: Type.Object({
+      id: Type.Number({ description: D.wi_link.params.id }),
+      targetId: Type.Number({ description: D.wi_link.params.targetId }),
+      linkType: StringEnum(["parent", "child", "related", "duplicate", "successor", "predecessor"], { description: D.wi_link.params.linkType }),
+      comment: Type.Optional(Type.String({ description: D.wi_link.params.comment })),
+      profile: Type.Optional(Type.String({ description: D.wi_link.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.wiLink, params);
+    },
+  });
+
+  // ─── Tool: ado_wi_attach ─────────────────────────────────
+
+  pi.registerTool({
+    name: D.wi_attach.name,
+    label: "ADO Attach File",
+    description: D.wi_attach.description,
+    parameters: Type.Object({
+      id: Type.Number({ description: D.wi_attach.params.id }),
+      filePath: Type.String({ description: D.wi_attach.params.filePath }),
+      comment: Type.Optional(Type.String({ description: D.wi_attach.params.comment })),
+      profile: Type.Optional(Type.String({ description: D.wi_attach.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.wiAttach, params);
+    },
+  });
+
+  // ─── Tool: ado_wi_query ──────────────────────────────────
+
+  pi.registerTool({
+    name: D.wi_query.name,
+    label: "ADO WIQL Query",
+    description: D.wi_query.description,
+    parameters: Type.Object({
+      wiql: Type.String({ description: D.wi_query.params.wiql }),
+      profile: Type.Optional(Type.String({ description: D.wi_query.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.wiQuery, params);
+    },
+  });
+
+  // ─── Tool: ado_pr_complete ───────────────────────────────
+
+  pi.registerTool({
+    name: D.pr_complete.name,
+    label: "ADO Complete PR",
+    description: D.pr_complete.description,
+    parameters: Type.Object({
+      repo: Type.Optional(Type.String({ description: D.pr_complete.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_complete.params.prId })),
+      mergeStrategy: Type.Optional(StringEnum(["squash", "rebase", "rebaseMerge", "noFastForward"], { description: D.pr_complete.params.mergeStrategy })),
+      deleteSourceBranch: Type.Optional(Type.Boolean({ description: D.pr_complete.params.deleteSourceBranch })),
+      bypassPolicy: Type.Optional(Type.Boolean({ description: D.pr_complete.params.bypassPolicy })),
+      profile: Type.Optional(Type.String({ description: D.pr_complete.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.prComplete, params);
+    },
+  });
+
+  // ─── Tool: ado_pr_abandon ────────────────────────────────
+
+  pi.registerTool({
+    name: D.pr_abandon.name,
+    label: "ADO Abandon PR",
+    description: D.pr_abandon.description,
+    parameters: Type.Object({
+      repo: Type.Optional(Type.String({ description: D.pr_abandon.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_abandon.params.prId })),
+      profile: Type.Optional(Type.String({ description: D.pr_abandon.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.prAbandon, params);
+    },
+  });
+
+  // ─── Tool: ado_pr_publish ────────────────────────────────
+
+  pi.registerTool({
+    name: D.pr_publish.name,
+    label: "ADO Publish Draft PR",
+    description: D.pr_publish.description,
+    parameters: Type.Object({
+      repo: Type.Optional(Type.String({ description: D.pr_publish.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_publish.params.prId })),
+      profile: Type.Optional(Type.String({ description: D.pr_publish.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.prPublish, params);
+    },
+  });
+
+  // ─── Tool: ado_pr_reviewers ──────────────────────────────
+
+  pi.registerTool({
+    name: D.pr_reviewers.name,
+    label: "ADO Add PR Reviewers",
+    description: D.pr_reviewers.description,
+    parameters: Type.Object({
+      repo: Type.Optional(Type.String({ description: D.pr_reviewers.params.repo })),
+      prId: Type.Optional(Type.Number({ description: D.pr_reviewers.params.prId })),
+      add: Type.Array(Type.String(), { description: D.pr_reviewers.params.add, minItems: 1 }),
+      required: Type.Optional(Type.Boolean({ description: D.pr_reviewers.params.required })),
+      profile: Type.Optional(Type.String({ description: D.pr_reviewers.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.prReviewers, params);
+    },
+  });
+
+  // ─── Tool: ado_pipeline_list ─────────────────────────────
+
+  pi.registerTool({
+    name: D.pipeline_list.name,
+    label: "ADO Pipelines",
+    description: D.pipeline_list.description,
+    parameters: Type.Object({
+      profile: Type.Optional(Type.String({ description: D.pipeline_list.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.pipelineList, params);
+    },
+  });
+
+  // ─── Tool: ado_pipeline_runs ─────────────────────────────
+
+  pi.registerTool({
+    name: D.pipeline_runs.name,
+    label: "ADO Pipeline Runs",
+    description: D.pipeline_runs.description,
+    parameters: Type.Object({
+      pipelineId: Type.Number({ description: D.pipeline_runs.params.pipelineId }),
+      limit: Type.Optional(Type.Number({ description: D.pipeline_runs.params.limit })),
+      profile: Type.Optional(Type.String({ description: D.pipeline_runs.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.pipelineRuns, params);
+    },
+  });
+
+  // ─── Tool: ado_pipeline_run ──────────────────────────────
+
+  pi.registerTool({
+    name: D.pipeline_run.name,
+    label: "ADO Run Pipeline",
+    description: D.pipeline_run.description,
+    parameters: Type.Object({
+      pipelineId: Type.Number({ description: D.pipeline_run.params.pipelineId }),
+      branch: Type.Optional(Type.String({ description: D.pipeline_run.params.branch })),
+      profile: Type.Optional(Type.String({ description: D.pipeline_run.params.profile })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      return asToolResult(cmd.pipelineRun, params);
     },
   });
 

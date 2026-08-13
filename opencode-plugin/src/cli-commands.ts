@@ -7,6 +7,8 @@
  * formatted string the caller prints / returns to the LLM.
  */
 
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import type { AdoConfig } from "./shared.js";
 import { shortBranch, fmtPR, fmtPRDetail, fmtThread, fmtWorkItem, fmtWorkItemDetail } from "./shared.js";
 import { getActiveProfile, setActiveProfile, setSelectedPr } from "./profile-store.js";
@@ -24,7 +26,7 @@ import {
   workItemIdFromUrl,
 } from "./ado-client.js";
 import { loadProjectConfig } from "./chain-config.js";
-import { validateWorkItemCreation } from "./wi-create.js";
+import { buildFieldPatchOps, validateWorkItemCreation } from "./wi-create.js";
 import { runCreatePr, runChainPrs } from "./chain-runner.js";
 
 // ─── PR commands ────────────────────────────────────────────────────────────
@@ -285,19 +287,92 @@ export async function wiGet(config: AdoConfig, args: { id: number; profile?: str
   return formatWorkItemFullDetail(ado, wi, `## Work Item #${args.id} (${name})`);
 }
 
-export async function wiUpdate(
-  config: AdoConfig,
-  args: { id: number; state?: string; priority?: number; comment?: string; profile?: string },
-): Promise<string> {
+/** Link type aliases accepted by `ado wi link`. */
+export const WI_LINK_TYPES: Record<string, string> = {
+  parent: "System.LinkTypes.Hierarchy-Reverse",
+  child: "System.LinkTypes.Hierarchy-Forward",
+  related: "System.LinkTypes.Related",
+  duplicate: "System.LinkTypes.Duplicate-Forward",
+  successor: "System.LinkTypes.Dependency-Forward",
+  predecessor: "System.LinkTypes.Dependency-Reverse",
+};
+
+interface WiUpdateArgs {
+  id: number;
+  title?: string;
+  description?: string;
+  state?: string;
+  priority?: number;
+  assignedTo?: string;
+  areaPath?: string;
+  iterationPath?: string;
+  tags?: string;
+  comment?: string;
+  customFields?: Record<string, string>;
+  profile?: string;
+}
+
+export async function wiUpdate(config: AdoConfig, args: WiUpdateArgs): Promise<string> {
   const { client: ado } = await createClientFromConfig(config, args.profile);
-  const patchOps: Array<{ op: string; path: string; value: any }> = [];
-  if (args.state) patchOps.push({ op: "replace", path: "/fields/System.State", value: args.state });
-  if (args.priority !== undefined) patchOps.push({ op: "replace", path: "/fields/Microsoft.VSTS.Common.Priority", value: args.priority });
-  if (patchOps.length === 0 && !args.comment) return "No changes. Provide state, priority, or comment.";
+  // Reuse the creation field mapping so custom fields behave identically on
+  // update; only the op differs ("replace" keeps existing-field semantics).
+  const fields: Record<string, unknown> = {};
+  if (args.title !== undefined) fields.title = args.title;
+  if (args.description !== undefined) fields.description = args.description;
+  if (args.state !== undefined) fields.state = args.state;
+  if (args.priority !== undefined) fields.priority = args.priority;
+  if (args.assignedTo !== undefined) fields.assignedTo = args.assignedTo;
+  if (args.areaPath !== undefined) fields.areaPath = args.areaPath;
+  if (args.iterationPath !== undefined) fields.iterationPath = args.iterationPath;
+  if (args.tags !== undefined) fields.tags = args.tags;
+
+  const patchOps = buildFieldPatchOps(fields, args.customFields).map((op) => ({ ...op, op: "replace" }));
+  if (patchOps.length === 0 && !args.comment) {
+    return "No changes. Provide a field, --field <Name>=<value>, or --comment.";
+  }
   if (patchOps.length > 0) await ado.updateWorkItem(args.id, patchOps);
   if (args.comment) await ado.addWorkItemComment(args.id, args.comment);
-  const parts = [args.state && `state→${args.state}`, args.priority !== undefined && `P→${args.priority}`, args.comment && "comment added"].filter(Boolean);
-  return `#${args.id} updated: ${parts.join(", ")}`;
+  const changed = patchOps.map((op) => op.path.replace("/fields/", ""));
+  if (args.comment) changed.push("comment");
+  return `#${args.id} updated: ${changed.join(", ")}`;
+}
+
+export async function wiLink(
+  config: AdoConfig,
+  args: { id: number; targetId: number; linkType: string; comment?: string; profile?: string },
+): Promise<string> {
+  const rel = WI_LINK_TYPES[args.linkType.toLowerCase()];
+  if (!rel) {
+    return `Unknown link type '${args.linkType}'. Use one of: ${Object.keys(WI_LINK_TYPES).join(", ")}`;
+  }
+  const { client: ado } = await createClientFromConfig(config, args.profile);
+  const created = await ado.linkWorkItems(args.id, args.targetId, rel, args.comment);
+  return created
+    ? `#${args.id} → ${args.linkType} → #${args.targetId}`
+    : `#${args.id} already has that ${args.linkType} link to #${args.targetId}`;
+}
+
+export async function wiAttach(
+  config: AdoConfig,
+  args: { id: number; filePath: string; comment?: string; profile?: string },
+): Promise<string> {
+  const { client: ado } = await createClientFromConfig(config, args.profile);
+  const content = readFileSync(args.filePath);
+  const fileName = basename(args.filePath);
+  await ado.attachFileToWorkItem(args.id, fileName, content, args.comment);
+  return `#${args.id}: attached ${fileName} (${content.length} bytes)`;
+}
+
+export async function wiQuery(
+  config: AdoConfig,
+  args: { wiql: string; profile?: string },
+): Promise<string> {
+  const { client: ado, name } = await createClientFromConfig(config, args.profile);
+  const result = await ado.queryWiql(args.wiql);
+  const ids = (result.workItems ?? []).map((wi) => wi.id);
+  if (ids.length === 0) return `## WIQL (${name})\nNo results`;
+  const workItems = await ado.getWorkItemsByIds(ids);
+  return `## WIQL (${name})\n${workItems.map(fmtWorkItem).join("\n")}\n${workItems.length} total`;
 }
 
 export async function wiComment(config: AdoConfig, args: { id: number; comment: string; profile?: string }): Promise<string> {
@@ -475,6 +550,91 @@ export async function wiRelated(
 }
 
 // ─── Profile commands ───────────────────────────────────────────────────────
+
+export async function prComplete(
+  config: AdoConfig,
+  args: { repo?: string; prId?: number; mergeStrategy?: string; deleteSourceBranch?: boolean; bypassPolicy?: boolean; profile?: string },
+): Promise<string> {
+  const { repo, prId, profileName } = await resolvePrArgsAuto(config, args);
+  const { client: ado } = await createClientFromConfig(config, profileName);
+  const pr = await ado.completePullRequest(repo, prId, {
+    mergeStrategy: args.mergeStrategy,
+    deleteSourceBranch: args.deleteSourceBranch,
+    bypassPolicy: args.bypassPolicy,
+  });
+  return `PR !${prId} completed (${pr.status ?? "completed"}, ${args.mergeStrategy ?? "squash"})`;
+}
+
+export async function prAbandon(
+  config: AdoConfig,
+  args: { repo?: string; prId?: number; profile?: string },
+): Promise<string> {
+  const { repo, prId, profileName } = await resolvePrArgsAuto(config, args);
+  const { client: ado } = await createClientFromConfig(config, profileName);
+  await ado.updatePullRequest(repo, prId, { status: "abandoned" });
+  return `PR !${prId} abandoned`;
+}
+
+export async function prPublish(
+  config: AdoConfig,
+  args: { repo?: string; prId?: number; profile?: string },
+): Promise<string> {
+  const { repo, prId, profileName } = await resolvePrArgsAuto(config, args);
+  const { client: ado } = await createClientFromConfig(config, profileName);
+  await ado.updatePullRequest(repo, prId, { isDraft: false });
+  return `PR !${prId} published (no longer a draft)`;
+}
+
+export async function prReviewers(
+  config: AdoConfig,
+  args: { repo?: string; prId?: number; add: string[]; required?: boolean; profile?: string },
+): Promise<string> {
+  const { repo, prId, profileName } = await resolvePrArgsAuto(config, args);
+  const { client: ado } = await createClientFromConfig(config, profileName);
+  const added: string[] = [];
+  for (const who of args.add) {
+    const identity = await ado.findIdentityId(who);
+    if (!identity) {
+      added.push(`${who} (not found)`);
+      continue;
+    }
+    await ado.addReviewer(repo, prId, identity.id, args.required);
+    added.push(identity.displayName);
+  }
+  return `PR !${prId} reviewers: ${added.join(", ")}`;
+}
+
+// ─── Pipeline commands ──────────────────────────────────────────────────────
+
+export async function pipelineList(config: AdoConfig, args: { profile?: string }): Promise<string> {
+  const { client: ado, name } = await createClientFromConfig(config, args.profile);
+  const pipelines = await ado.listPipelines();
+  if (pipelines.length === 0) return `## Pipelines (${name})\nNone`;
+  const out = pipelines.map((p: any) => `- [${p.id}] ${p.name}${p.folder && p.folder !== "\\" ? ` (${p.folder})` : ""}`).join("\n");
+  return `## Pipelines (${name})\n${out}\n${pipelines.length} total`;
+}
+
+export async function pipelineRuns(
+  config: AdoConfig,
+  args: { pipelineId: number; limit?: number; profile?: string },
+): Promise<string> {
+  const { client: ado, name } = await createClientFromConfig(config, args.profile);
+  const runs = await ado.listPipelineRuns(args.pipelineId);
+  if (runs.length === 0) return `## Runs of pipeline ${args.pipelineId} (${name})\nNone`;
+  const out = runs.slice(0, args.limit ?? 10)
+    .map((r: any) => `- [${r.id}] ${r.state}${r.result ? `/${r.result}` : ""} — ${r.name ?? ""} ${r.createdDate ?? ""}`)
+    .join("\n");
+  return `## Runs of pipeline ${args.pipelineId} (${name})\n${out}`;
+}
+
+export async function pipelineRun(
+  config: AdoConfig,
+  args: { pipelineId: number; branch?: string; profile?: string },
+): Promise<string> {
+  const { client: ado } = await createClientFromConfig(config, args.profile);
+  const run = await ado.runPipeline(args.pipelineId, args.branch);
+  return `Pipeline ${args.pipelineId} queued: run ${run.id} (${run.state})${args.branch ? ` on ${args.branch}` : ""}\n${run._links?.web?.href ?? ""}`;
+}
 
 export async function profileGet(config: AdoConfig, args: { profile?: string }): Promise<string> {
   const { profile: prof, name } = await createClientFromConfig(config, args.profile);

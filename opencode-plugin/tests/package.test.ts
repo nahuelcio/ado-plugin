@@ -187,3 +187,25 @@ describe("package metadata", () => {
     expect(tuiSource).toContain("relativeTime");
   });
 });
+
+describe("tool surface parity", () => {
+  const descriptions = readFileSync(new URL("../src/tool-descriptions.ts", import.meta.url), "utf-8");
+  const indexSource = readFileSync(new URL("../src/index.ts", import.meta.url), "utf-8");
+  const piSource = readFileSync(new URL("../src/pi-entry.ts", import.meta.url), "utf-8");
+
+  // Every entry in the shared description table must be registered by both
+  // hosts, otherwise one of them silently drifts behind the other.
+  const toolKeys = [...descriptions.matchAll(/^ {2}([a-z_]+): \{$/gm)].map((m) => m[1]);
+
+  it("finds the tool description table", () => {
+    expect(toolKeys.length).toBeGreaterThan(20);
+  });
+
+  it.each(toolKeys)("registers %s in the OpenCode plugin", (key) => {
+    expect(indexSource).toContain(`D.${key}.name`);
+  });
+
+  it.each(toolKeys)("registers %s in the Pi extension", (key) => {
+    expect(piSource).toContain(`D.${key}.name`);
+  });
+});

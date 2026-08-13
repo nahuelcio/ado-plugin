@@ -211,14 +211,70 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         description: D.wi_update.description,
         args: {
           id: z.number().describe(D.wi_update.params.id),
+          title: z.string().optional().describe(D.wi_update.params.title),
+          description: z.string().optional().describe(D.wi_update.params.description),
           state: z.string().optional().describe(D.wi_update.params.state),
-          priority: z.number().optional(),
-          comment: z.string().optional(),
+          priority: z.number().optional().describe(D.wi_update.params.priority),
+          assignedTo: z.string().optional().describe(D.wi_update.params.assignedTo),
+          areaPath: z.string().optional().describe(D.wi_update.params.areaPath),
+          iterationPath: z.string().optional().describe(D.wi_update.params.iterationPath),
+          tags: z.string().optional().describe(D.wi_update.params.tags),
+          comment: z.string().optional().describe(D.wi_update.params.comment),
+          customFields: z.record(z.string(), z.string()).optional().describe(D.wi_update.params.customFields),
           profile: z.string().optional().describe(D.wi_update.params.profile),
         },
-        async execute(args: { id: number; state?: string; priority?: number; comment?: string; profile?: string }) {
+        async execute(args: {
+          id: number; title?: string; description?: string; state?: string; priority?: number;
+          assignedTo?: string; areaPath?: string; iterationPath?: string; tags?: string;
+          comment?: string; customFields?: Record<string, string>; profile?: string;
+        }) {
           return cmd.wiUpdate(await loadConfig(), args);
         },
+      },
+
+      [D.wi_fields.name]: {
+        description: D.wi_fields.description,
+        args: {
+          type: z.string().describe(D.wi_fields.params.type),
+          profile: z.string().optional().describe(D.wi_fields.params.profile),
+        },
+        async execute(args: { type: string; profile?: string }) { return cmd.wiFields(await loadConfig(), args); },
+      },
+
+      [D.wi_link.name]: {
+        description: D.wi_link.description,
+        args: {
+          id: z.number().describe(D.wi_link.params.id),
+          targetId: z.number().describe(D.wi_link.params.targetId),
+          linkType: z.enum(["parent", "child", "related", "duplicate", "successor", "predecessor"]).describe(D.wi_link.params.linkType),
+          comment: z.string().optional().describe(D.wi_link.params.comment),
+          profile: z.string().optional().describe(D.wi_link.params.profile),
+        },
+        async execute(args: { id: number; targetId: number; linkType: string; comment?: string; profile?: string }) {
+          return cmd.wiLink(await loadConfig(), args);
+        },
+      },
+
+      [D.wi_attach.name]: {
+        description: D.wi_attach.description,
+        args: {
+          id: z.number().describe(D.wi_attach.params.id),
+          filePath: z.string().describe(D.wi_attach.params.filePath),
+          comment: z.string().optional().describe(D.wi_attach.params.comment),
+          profile: z.string().optional().describe(D.wi_attach.params.profile),
+        },
+        async execute(args: { id: number; filePath: string; comment?: string; profile?: string }) {
+          return cmd.wiAttach(await loadConfig(), args);
+        },
+      },
+
+      [D.wi_query.name]: {
+        description: D.wi_query.description,
+        args: {
+          wiql: z.string().describe(D.wi_query.params.wiql),
+          profile: z.string().optional().describe(D.wi_query.params.profile),
+        },
+        async execute(args: { wiql: string; profile?: string }) { return cmd.wiQuery(await loadConfig(), args); },
       },
 
       [D.wi_comment.name]: {
@@ -332,6 +388,89 @@ const server: Plugin = async (input: PluginInput, options?: PluginOptions): Prom
         },
         async execute(args: { repo: string; workItemIds: number[]; baseBranch?: string; strategy?: "feature-chain" | "stacked"; prefix?: string; branchNames?: string[]; profile?: string }) {
           return cmd.prChain(await loadConfig(), args);
+        },
+      },
+
+      // ─── PR lifecycle tools ────────────────────────────────────────────
+
+      [D.pr_complete.name]: {
+        description: D.pr_complete.description,
+        args: {
+          repo: z.string().optional().describe(D.pr_complete.params.repo),
+          prId: z.number().optional().describe(D.pr_complete.params.prId),
+          mergeStrategy: z.enum(["squash", "rebase", "rebaseMerge", "noFastForward"]).optional().describe(D.pr_complete.params.mergeStrategy),
+          deleteSourceBranch: z.boolean().optional().describe(D.pr_complete.params.deleteSourceBranch),
+          bypassPolicy: z.boolean().optional().describe(D.pr_complete.params.bypassPolicy),
+          profile: z.string().optional().describe(D.pr_complete.params.profile),
+        },
+        async execute(args: { repo?: string; prId?: number; mergeStrategy?: string; deleteSourceBranch?: boolean; bypassPolicy?: boolean; profile?: string }) {
+          return cmd.prComplete(await loadConfig(), args);
+        },
+      },
+
+      [D.pr_abandon.name]: {
+        description: D.pr_abandon.description,
+        args: {
+          repo: z.string().optional().describe(D.pr_abandon.params.repo),
+          prId: z.number().optional().describe(D.pr_abandon.params.prId),
+          profile: z.string().optional().describe(D.pr_abandon.params.profile),
+        },
+        async execute(args: { repo?: string; prId?: number; profile?: string }) { return cmd.prAbandon(await loadConfig(), args); },
+      },
+
+      [D.pr_publish.name]: {
+        description: D.pr_publish.description,
+        args: {
+          repo: z.string().optional().describe(D.pr_publish.params.repo),
+          prId: z.number().optional().describe(D.pr_publish.params.prId),
+          profile: z.string().optional().describe(D.pr_publish.params.profile),
+        },
+        async execute(args: { repo?: string; prId?: number; profile?: string }) { return cmd.prPublish(await loadConfig(), args); },
+      },
+
+      [D.pr_reviewers.name]: {
+        description: D.pr_reviewers.description,
+        args: {
+          repo: z.string().optional().describe(D.pr_reviewers.params.repo),
+          prId: z.number().optional().describe(D.pr_reviewers.params.prId),
+          add: z.array(z.string()).min(1).describe(D.pr_reviewers.params.add),
+          required: z.boolean().optional().describe(D.pr_reviewers.params.required),
+          profile: z.string().optional().describe(D.pr_reviewers.params.profile),
+        },
+        async execute(args: { repo?: string; prId?: number; add: string[]; required?: boolean; profile?: string }) {
+          return cmd.prReviewers(await loadConfig(), args);
+        },
+      },
+
+      // ─── Pipeline tools ────────────────────────────────────────────────
+
+      [D.pipeline_list.name]: {
+        description: D.pipeline_list.description,
+        args: { profile: z.string().optional().describe(D.pipeline_list.params.profile) },
+        async execute(args: { profile?: string }) { return cmd.pipelineList(await loadConfig(), args); },
+      },
+
+      [D.pipeline_runs.name]: {
+        description: D.pipeline_runs.description,
+        args: {
+          pipelineId: z.number().describe(D.pipeline_runs.params.pipelineId),
+          limit: z.number().optional().describe(D.pipeline_runs.params.limit),
+          profile: z.string().optional().describe(D.pipeline_runs.params.profile),
+        },
+        async execute(args: { pipelineId: number; limit?: number; profile?: string }) {
+          return cmd.pipelineRuns(await loadConfig(), args);
+        },
+      },
+
+      [D.pipeline_run.name]: {
+        description: D.pipeline_run.description,
+        args: {
+          pipelineId: z.number().describe(D.pipeline_run.params.pipelineId),
+          branch: z.string().optional().describe(D.pipeline_run.params.branch),
+          profile: z.string().optional().describe(D.pipeline_run.params.profile),
+        },
+        async execute(args: { pipelineId: number; branch?: string; profile?: string }) {
+          return cmd.pipelineRun(await loadConfig(), args);
         },
       },
     },

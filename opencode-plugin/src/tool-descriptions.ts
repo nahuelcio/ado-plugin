@@ -135,10 +135,19 @@ export const D = {
   },
   wi_update: {
     name: "ado_wi_update",
-    description: "Update work item: state, priority, or add comment",
+    description: "Update any work item field, custom ones included, and/or add a comment",
     params: {
       id: "Work item ID",
+      title: "New title",
+      description: "New description (Markdown)",
       state: "New state (e.g. Active, Closed)",
+      priority: "Priority (1-4)",
+      assignedTo: "Assign to user (email or display name)",
+      areaPath: "Area path",
+      iterationPath: "Iteration/sprint path",
+      tags: "Tags (semicolon-separated, replaces existing)",
+      comment: "Comment to add",
+      customFields: "Extra fields, keys as full ADO paths (e.g. /fields/Custom.Sponsors). Discover them with ado_wi_fields",
       profile: "Profile override",
     },
   },
@@ -198,6 +207,109 @@ export const D = {
       id: "Work item ID",
       state: "State filter (e.g. Active, New)",
       workItemType: "Type filter (partial match)",
+      profile: "Profile override",
+    },
+  },
+  pr_complete: {
+    name: "ado_pr_complete",
+    description: "Complete (merge) a PR. Fails if the source branch moved after the last review",
+    params: {
+      repo: "Omit to auto-discover by PR ID",
+      prId: "PR ID",
+      mergeStrategy: "squash (default), rebase, rebaseMerge or noFastForward",
+      deleteSourceBranch: "Delete the source branch after merging (default false)",
+      bypassPolicy: "Bypass branch policies (requires permission)",
+      profile: "Profile override",
+    },
+  },
+  pr_abandon: {
+    name: "ado_pr_abandon",
+    description: "Abandon a PR",
+    params: {
+      repo: "Omit to auto-discover by PR ID",
+      prId: "PR ID",
+      profile: "Profile override",
+    },
+  },
+  pr_publish: {
+    name: "ado_pr_publish",
+    description: "Turn a draft PR into a regular PR",
+    params: {
+      repo: "Omit to auto-discover by PR ID",
+      prId: "PR ID",
+      profile: "Profile override",
+    },
+  },
+  pr_reviewers: {
+    name: "ado_pr_reviewers",
+    description: "Add reviewers to a PR, resolved by display name or email",
+    params: {
+      repo: "Omit to auto-discover by PR ID",
+      prId: "PR ID",
+      add: "Users to add (display name or email)",
+      required: "Mark them as required reviewers",
+      profile: "Profile override",
+    },
+  },
+  wi_fields: {
+    name: "ado_wi_fields",
+    description: "List every field of a work item type in this project, custom ones included, with data type, required flag and allowed values. Call this before creating or updating when the project has special fields",
+    params: {
+      type: "Work item type (e.g. User Story, Bug)",
+      profile: "Profile override",
+    },
+  },
+  wi_link: {
+    name: "ado_wi_link",
+    description: "Link two existing work items. Idempotent",
+    params: {
+      id: "Source work item ID",
+      targetId: "Target work item ID",
+      linkType: "parent, child, related, duplicate, successor or predecessor",
+      comment: "Optional link comment",
+      profile: "Profile override",
+    },
+  },
+  wi_attach: {
+    name: "ado_wi_attach",
+    description: "Upload a local file and attach it to a work item",
+    params: {
+      id: "Work item ID",
+      filePath: "Path to the local file",
+      comment: "Optional attachment comment",
+      profile: "Profile override",
+    },
+  },
+  wi_query: {
+    name: "ado_wi_query",
+    description: "Run raw WIQL. Use it to filter by custom fields that ado_wi_list does not cover",
+    params: {
+      wiql: "WIQL query, e.g. SELECT [System.Id] FROM WorkItems WHERE [Custom.Classification] = 'Vulnerability'",
+      profile: "Profile override",
+    },
+  },
+  pipeline_list: {
+    name: "ado_pipeline_list",
+    description: "List pipelines with their IDs",
+    params: {
+      profile: "Profile override",
+    },
+  },
+  pipeline_runs: {
+    name: "ado_pipeline_runs",
+    description: "Recent runs of a pipeline with state and result",
+    params: {
+      pipelineId: "Pipeline ID",
+      limit: "Max runs to show (default 10)",
+      profile: "Profile override",
+    },
+  },
+  pipeline_run: {
+    name: "ado_pipeline_run",
+    description: "Queue a new pipeline run",
+    params: {
+      pipelineId: "Pipeline ID",
+      branch: "Branch to run against (default: pipeline default)",
       profile: "Profile override",
     },
   },

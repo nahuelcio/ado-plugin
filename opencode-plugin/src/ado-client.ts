@@ -181,6 +181,65 @@ export class AdoClient {
     );
   }
 
+  /** Patch a pull request (complete, abandon, reactivate, publish a draft). */
+  async updatePullRequest(repo: string, prId: number, body: Record<string, unknown>) {
+    return this.request<any>(
+      `/git/repositories/${encodeURIComponent(repo)}/pullrequests/${prId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    );
+  }
+
+  /**
+   * Complete (merge) a pull request. ADO requires the current source commit so
+   * it can refuse the merge when the branch moved after the last review.
+   */
+  async completePullRequest(
+    repo: string,
+    prId: number,
+    options?: { mergeStrategy?: string; deleteSourceBranch?: boolean; bypassPolicy?: boolean },
+  ) {
+    const pr = await this.getPullRequest(repo, prId);
+    return this.updatePullRequest(repo, prId, {
+      status: "completed",
+      lastMergeSourceCommit: pr.lastMergeSourceCommit,
+      completionOptions: {
+        mergeStrategy: options?.mergeStrategy ?? "squash",
+        deleteSourceBranch: options?.deleteSourceBranch ?? false,
+        bypassPolicy: options?.bypassPolicy ?? false,
+      },
+    });
+  }
+
+  /** Add a reviewer by identity id. `isRequired` marks it a required reviewer. */
+  async addReviewer(repo: string, prId: number, identityId: string, isRequired = false) {
+    return this.request<any>(
+      `/git/repositories/${encodeURIComponent(repo)}/pullrequests/${prId}/reviewers/${encodeURIComponent(identityId)}`,
+      { method: "PUT", body: JSON.stringify({ vote: 0, isRequired }) },
+    );
+  }
+
+  /** Resolve a user identity id from a display name or email. */
+  async findIdentityId(query: string): Promise<{ id: string; displayName: string } | null> {
+    const data = await this.request<{ value?: any[] }>(
+      `/IdentityPicker/Identities?api-version=7.1-preview.1`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          query,
+          identityTypes: ["user"],
+          operationScopes: ["ims", "source"],
+          properties: ["DisplayName", "Mail", "LocalId"],
+          options: { MinResults: 1, MaxResults: 1 },
+        }),
+      },
+      "org",
+      "7.1-preview.1",
+    );
+    const identity = data.value?.[0]?.identities?.[0];
+    if (!identity) return null;
+    return { id: identity.localId ?? identity.entityId, displayName: identity.displayName ?? query };
+  }
+
   // ─── Diff & iteration methods ────────────────────────────────────
 
   async getIterations(repo: string, prId: number) {
@@ -286,6 +345,93 @@ export class AdoClient {
       throw new Error(`ADO ${res.status}: ${truncated}`);
     }
     return res.json();
+  }
+
+  /**
+   * Link two existing work items. `rel` is an ADO link type such as
+   * `System.LinkTypes.Hierarchy-Reverse` (parent) or `System.LinkTypes.Related`.
+   * No-ops when the same link already exists.
+   */
+  async linkWorkItems(id: number, targetId: number, rel: string, comment?: string): Promise<boolean> {
+    const targetUrl = this.buildUrl(`/_apis/wit/workItems/${targetId}`, "org");
+    const wi = await this.getWorkItem(id, { expandRelations: true });
+    const exists = (wi.relations ?? []).some(
+      (r: any) => r.rel === rel && String(r.url ?? "").endsWith(`/${targetId}`),
+    );
+    if (exists) return false;
+    await this.updateWorkItem(id, [
+      {
+        op: "add",
+        path: "/relations/-",
+        value: { rel, url: targetUrl, ...(comment ? { attributes: { comment } } : {}) },
+      },
+    ]);
+    return true;
+  }
+
+  /** Upload a file and attach it to a work item. */
+  async attachFileToWorkItem(id: number, fileName: string, content: Buffer, comment?: string): Promise<string> {
+    const url = this.buildUrl(
+      `/_apis/wit/attachments?fileName=${encodeURIComponent(fileName)}`,
+      "project",
+    );
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: this.authHeader,
+        Accept: "application/json",
+        "Content-Type": "application/octet-stream",
+      },
+      body: new Uint8Array(content),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`ADO ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const { url: attachmentUrl } = (await res.json()) as { url: string };
+    await this.updateWorkItem(id, [
+      {
+        op: "add",
+        path: "/relations/-",
+        value: {
+          rel: "AttachedFile",
+          url: attachmentUrl,
+          attributes: { name: fileName, ...(comment ? { comment } : {}) },
+        },
+      },
+    ]);
+    return attachmentUrl;
+  }
+
+  // ─── Pipelines ───────────────────────────────────────────────────
+
+  async listPipelines(): Promise<any[]> {
+    const data = await this.request<{ value: any[] }>("/pipelines", undefined, "project");
+    return data.value ?? [];
+  }
+
+  async listPipelineRuns(pipelineId: number): Promise<any[]> {
+    const data = await this.request<{ value: any[] }>(
+      `/pipelines/${pipelineId}/runs`,
+      undefined,
+      "project",
+    );
+    return data.value ?? [];
+  }
+
+  async runPipeline(pipelineId: number, branch?: string): Promise<any> {
+    return this.request<any>(
+      `/pipelines/${pipelineId}/runs`,
+      {
+        method: "POST",
+        body: JSON.stringify(
+          branch
+            ? { resources: { repositories: { self: { refName: `refs/heads/${branch}` } } } }
+            : {},
+        ),
+      },
+      "project",
+    );
   }
 
   async getWorkItemComments(id: number): Promise<any> {
