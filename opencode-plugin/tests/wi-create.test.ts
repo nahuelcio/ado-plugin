@@ -849,3 +849,25 @@ describe("AdoClient.createWorkItem with customFields", () => {
     expect(hasCustom).toBe(false);
   });
 });
+
+describe("buildFieldPatchOps value coercion", () => {
+  it("sends boolean strings as real booleans for Boolean fields", () => {
+    expect(buildFieldPatchOps({}, { "/fields/Custom.Vulnerability": "False" })).toEqual([
+      { op: "add", path: "/fields/Custom.Vulnerability", value: false },
+    ]);
+  });
+
+  it("leaves dates, numbers and picklist values as strings", () => {
+    expect(
+      buildFieldPatchOps({}, {
+        "/fields/Custom.Version": "1.0",
+        "/fields/Custom.TargetDate": "2026-08-13",
+        "/fields/Custom.Classification": "US Producto",
+      }),
+    ).toEqual([
+      { op: "add", path: "/fields/Custom.Version", value: "1.0" },
+      { op: "add", path: "/fields/Custom.TargetDate", value: "2026-08-13" },
+      { op: "add", path: "/fields/Custom.Classification", value: "US Producto" },
+    ]);
+  });
+});

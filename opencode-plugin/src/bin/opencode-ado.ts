@@ -329,6 +329,26 @@ function flagNumList(flags: ParsedArgs["flags"], key: string): number[] | undefi
   return v.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n));
 }
 
+/**
+ * Collect repeatable `--field <Name>=<value>` flags into ADO field paths.
+ * `Name` may be bare (`Custom.Sponsors`) or a full path (`/fields/Custom.Sponsors`).
+ * Read straight from argv because parseArgs keeps only the last value of a flag.
+ */
+export function parseFieldFlags(argv: string[]): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== "--field") continue;
+    const raw = argv[i + 1];
+    if (raw === undefined || raw.startsWith("--")) continue;
+    i++;
+    const eq = raw.indexOf("=");
+    if (eq <= 0) throw new Error(`Invalid --field '${raw}'. Expected <FieldName>=<value>.`);
+    const name = raw.slice(0, eq).trim();
+    out[name.startsWith("/fields/") ? name : `/fields/${name}`] = raw.slice(eq + 1);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function flagStrList(flags: ParsedArgs["flags"], key: string): string[] | undefined {
   const v = flagStr(flags, key);
   if (v === undefined) return undefined;
@@ -476,6 +496,7 @@ async function runWiGroup(argv: string[]): Promise<number> {
     assignedTo: flagStr(flags, "assigned"),
     state: flagStr(flags, "state"),
     tags: flagStr(flags, "tags"),
+    customFields: parseFieldFlags(argv),
     profile,
   });
 
@@ -495,6 +516,11 @@ async function runWiGroup(argv: string[]): Promise<number> {
     }
     case "types":
       return runCmd((c) => cmd.wiTypes(c, { profile }));
+    case "fields": {
+      const type = flagStr(flags, "type") ?? positional[0];
+      if (!type) { console.log(yellow("Usage: ado wi fields --type <type>")); return 1; }
+      return runCmd((c) => cmd.wiFields(c, { type, profile }));
+    }
     case "update": {
       const id = parseWorkItemId(positional[0]);
       if (!id) { console.log(yellow("Usage: ado wi update <id> [--state <s>] [--priority <n>] [--comment <text>]")); return 1; }
@@ -512,12 +538,12 @@ async function runWiGroup(argv: string[]): Promise<number> {
       return runCmd((c) => cmd.wiRelated(c, { id, state: flagStr(flags, "state"), workItemType: flagStr(flags, "type"), profile }));
     }
     case "create": {
-      if (!flagStr(flags, "title")) { console.log(yellow("Usage: ado wi create --title <t> [--type <type>] [--description <d>] [--parent <id>] ...")); return 1; }
+      if (!flagStr(flags, "title")) { console.log(yellow("Usage: ado wi create --title <t> [--type <type>] [--description <d>] [--parent <id>] [--field <Name>=<value>] ...")); return 1; }
       return runCmd((c) => cmd.wiCreate(c, { ...wiCreateArgs(), parentId: flagNum(flags, "parent") }));
     }
     case "create-child": {
       const parentId = flagNum(flags, "parent");
-      if (!parentId || !flagStr(flags, "title")) { console.log(yellow("Usage: ado wi create-child --parent <id> --title <t> [--type <type>] ...")); return 1; }
+      if (!parentId || !flagStr(flags, "title")) { console.log(yellow("Usage: ado wi create-child --parent <id> --title <t> [--type <type>] [--field <Name>=<value>] ...")); return 1; }
       return runCmd((c) => cmd.wiCreateChild(c, { ...wiCreateArgs(), parentId }));
     }
     default:
@@ -1062,7 +1088,7 @@ const USAGE = [
   `    ${cyan("npx @cioffinahuel/opencode-ado show")}    Show current config`,
   `    ${cyan("ado profile [list|use <name>]")}          Show/list/switch ADO profile`,
   `    ${cyan("ado pr <list|get|threads|diff|context|comment|vote|select|file|create|chain>")}`,
-  `    ${cyan("ado wi <list|get|types|update|comment|related|create|create-child>")}`,
+  `    ${cyan("ado wi <list|get|types|fields|update|comment|related|create|create-child>")}`,
   `    ${cyan("npx @cioffinahuel/opencode-ado --help")}  Show this help`,
   "",
 ].join("\n");

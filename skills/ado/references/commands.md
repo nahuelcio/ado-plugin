@@ -51,7 +51,8 @@ tools into context.
 | `ado wi related <id> [--state <s>] [--type <type>]` | Related work items with summary + details. |
 | `ado wi update <id> [--state <s>] [--priority <n>] [--comment <text>]` | Update state/priority and/or add a comment. |
 | `ado wi comment <id> --comment <text>` | Add a comment. |
-| `ado wi create --title <t> [--type <type>] [--description <d>] [--area <p>] [--iteration <p>] [--priority <n>] [--assigned <user>] [--state <s>] [--tags <a;b>] [--parent <id>]` | Create a work item (validated against `.adoconfig.toml`). |
+| `ado wi fields --type <type>` | List every field of a work item type in this project (custom ones included) with data type, required flag and allowed values. Run it before creating when the project has special fields. |
+| `ado wi create --title <t> [--type <type>] [--description <d>] [--area <p>] [--iteration <p>] [--priority <n>] [--assigned <user>] [--state <s>] [--tags <a;b>] [--parent <id>] [--field <Name>=<value>]` | Create a work item (validated against `.adoconfig.toml`). Repeat `--field` for custom/special ADO fields, e.g. `--field Custom.Sponsors=ACME`. |
 | `ado wi create-child --parent <id> --title <t> [--type <type>] ...` | Create a child work item under a parent. |
 
 ## Setup commands

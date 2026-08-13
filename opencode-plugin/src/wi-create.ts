@@ -22,6 +22,20 @@ const FIELD_MAP: Record<string, string> = {
 };
 
 /**
+ * Coerce a custom field value to the JSON type ADO expects.
+ *
+ * Boolean fields reject the strings "true"/"false" and must be sent as real
+ * booleans. Numbers, dates and picklist values are accepted as strings by the
+ * API, so they are left untouched.
+ */
+function coerceFieldValue(value: string): string | boolean {
+  const v = value.trim().toLowerCase();
+  if (v === "true") return true;
+  if (v === "false") return false;
+  return value;
+}
+
+/**
  * Build JSON Patch operations from input fields to ADO API field paths.
  *
  * Only known fields are mapped; unknown keys are silently ignored.
@@ -56,7 +70,7 @@ export function buildFieldPatchOps(
           `customField path '${path}' conflicts with a mapped field. Use the standard field argument instead.`,
         );
       }
-      ops.push({ op: "add", path, value });
+      ops.push({ op: "add", path, value: coerceFieldValue(value) });
     }
   }
   return ops;

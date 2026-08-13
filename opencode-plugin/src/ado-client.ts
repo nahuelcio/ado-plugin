@@ -321,6 +321,19 @@ export class AdoClient {
     return this.workItemTypesCache;
   }
 
+  /**
+   * Fields defined for a work item type in this project, including custom ones,
+   * with their data type, required flag and picklist values when the type has them.
+   */
+  async getWorkItemTypeFields(type: string): Promise<any[]> {
+    const data = await this.request<{ value: any[] }>(
+      `/wit/workitemtypes/${encodeURIComponent(type)}/fields?$expand=allowedValues`,
+      undefined,
+      "project",
+    );
+    return data.value ?? [];
+  }
+
   async queryWiql(wiql: string): Promise<{ workItems?: Array<{ id: number }>; workItemRelations?: Array<{ source?: { id: number }; target?: { id: number } }> }> {
     const data = await this.request<{ workItems?: Array<{ id: number }>; workItemRelations?: Array<{ source?: { id: number }; target?: { id: number } }> }>(
       "/wit/wiql",

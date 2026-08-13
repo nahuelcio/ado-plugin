@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stripJsonComments } from "../src/bin/opencode-ado.js";
+import { parseFieldFlags, stripJsonComments } from "../src/bin/opencode-ado.js";
 
 describe("stripJsonComments", () => {
   it("strips single-line comments", () => {
@@ -47,5 +47,25 @@ describe("stripJsonComments", () => {
     const input = `{"key": "say \\"hello\\""}`;
     const result = stripJsonComments(input);
     expect(JSON.parse(result)).toEqual({ key: `say "hello"` });
+  });
+});
+
+describe("parseFieldFlags", () => {
+  it("returns undefined when no --field flag is present", () => {
+    expect(parseFieldFlags(["create", "--title", "x"])).toBeUndefined();
+  });
+
+  it("collects repeated --field flags and prefixes bare names", () => {
+    expect(
+      parseFieldFlags(["--field", "Custom.Sponsors=ACME", "--field", "/fields/Custom.Team=Core"]),
+    ).toEqual({ "/fields/Custom.Sponsors": "ACME", "/fields/Custom.Team": "Core" });
+  });
+
+  it("keeps values containing '='", () => {
+    expect(parseFieldFlags(["--field", "Custom.Q=a=b"])).toEqual({ "/fields/Custom.Q": "a=b" });
+  });
+
+  it("throws when the value has no '='", () => {
+    expect(() => parseFieldFlags(["--field", "Custom.Sponsors"])).toThrow(/Invalid --field/);
   });
 });

@@ -313,6 +313,19 @@ export async function wiTypes(config: AdoConfig, args: { profile?: string }): Pr
   return `## WI Types (${name})\n${out}\n${types.length} types`;
 }
 
+export async function wiFields(config: AdoConfig, args: { type: string; profile?: string }): Promise<string> {
+  const { client: ado, name } = await createClientFromConfig(config, args.profile);
+  const fields = await ado.getWorkItemTypeFields(args.type);
+  const out = fields.map((f: any) => {
+    const flags = [f.alwaysRequired ? "required" : "", f.type].filter(Boolean).join(", ");
+    const allowed = Array.isArray(f.allowedValues) && f.allowedValues.length > 0
+      ? ` — values: ${f.allowedValues.slice(0, 20).join(" | ")}${f.allowedValues.length > 20 ? " | ..." : ""}`
+      : "";
+    return `- ${f.referenceName} (${f.name}) [${flags}]${allowed}`;
+  }).join("\n");
+  return `## Fields for '${args.type}' (${name})\n${out}\n${fields.length} fields`;
+}
+
 interface WiCreateArgs {
   type?: string;
   title: string;

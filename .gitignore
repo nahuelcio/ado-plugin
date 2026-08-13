@@ -47,3 +47,9 @@ Thumbs.db
 ado
 !/skills/ado/
 !/skills/ado/SKILL.md
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/
+
+# skill registry cache — regenerable
+.atl/
