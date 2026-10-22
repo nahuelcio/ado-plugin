@@ -23,19 +23,20 @@ npx @cioffinahuel/opencode-ado init   # ✅ runs this package
 Run `ado init` for an interactive wizard. It collects:
 
 - **Organization** — name or URL (`myorg`, `https://dev.azure.com/myorg`).
-- **PAT** — stored at `~/.azure-devops-cli/pat` (chmod 600), never in `opencode.json`.
+- **PAT** — stored at `~/.azure-devops-cli/pat` (chmod 600), never in the config file.
   Alternatively set the `AZURE_DEVOPS_PAT` env var.
 - **Profiles** — one per project: project name + repos to monitor. First profile
   becomes the default; mark others default on demand.
 
-Profiles persist into `opencode.json` under the plugin options. Inspect/switch later:
+Profiles persist into `~/.azure-devops-cli/config.json` (under `ado.profiles`).
+Profiles from older versions stored in the OpenCode config are migrated there
+automatically on first use. Inspect/switch later:
 
 | Command | Effect |
 | --- | --- |
 | `ado show` | Show configured profiles + whether a PAT is available. |
 | `ado profile` | Show the active profile. |
 | `ado profile use <name>` | Switch the active profile. |
-| `ado sync` | Re-register the plugin in OpenCode + TUI after edits. |
 
 PAT resolution order: a profile's direct `pat` → its `patEnvVar` → `AZURE_DEVOPS_PAT`
 → `~/.azure-devops-cli/pat`. If none validate, commands fail with an auth error.

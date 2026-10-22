@@ -1,6 +1,6 @@
 ---
 name: ado
-description: "Trigger: Azure DevOps PRs, work items, profiles; review/vote/comment a PR; list/create/update work items. Drive Azure DevOps via the `ado` CLI instead of plugin tools."
+description: "Trigger: Azure DevOps PRs, work items, profiles; review/vote/comment a PR; list/create/update work items. Drive Azure DevOps via the `ado` CLI."
 license: Apache-2.0
 allowed-tools: [Bash, Read]
 ---
@@ -9,7 +9,7 @@ allowed-tools: [Bash, Read]
 
 Load when the task touches Azure DevOps: pull requests (review, vote, comment,
 diff, create, chain), work items (list, get, update, create), or profiles. Use
-the `ado` CLI — do NOT load the OpenCode plugin tools for these operations.
+the `ado` CLI for every operation.
 
 ## Hard Rules
 

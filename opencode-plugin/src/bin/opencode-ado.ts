@@ -5,14 +5,12 @@
  *
  * Usage:
  *   npx @cioffinahuel/opencode-ado init    — Interactive setup wizard
- *   npx @cioffinahuel/opencode-ado sync    — Register existing config in OpenCode + TUI
- *   node dist/bin/opencode-ado.js sync-local — Register the local workspace build without publishing
  *   npx @cioffinahuel/opencode-ado show    — Show current config
  *   npx @cioffinahuel/opencode-ado --help
  */
 
 import { realpathSync, existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
-import { resolve, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
 import { createInterface } from "node:readline";
@@ -22,8 +20,6 @@ import type { AdoConfig, AdoProfile } from "../shared.js";
 import * as cmd from "../cli-commands.js";
 
 const PLUGIN_SPEC = "@cioffinahuel/opencode-ado";
-const SCHEMA_URL = "https://opencode.ai/config.json";
-const TUI_SCHEMA_URL = "https://opencode.ai/tui.json";
 
 // ─── Colors ───────────────────────────────────────────────────────────────
 
@@ -59,6 +55,7 @@ function yesNo(prompt: string, def = true): Promise<boolean> {
 
 // ─── Config paths ─────────────────────────────────────────────────────────
 
+/** Legacy location: profiles used to live in the OpenCode config. Read only for migration. */
 function getOpenCodeConfigDir(): string {
   // 1. XDG_CONFIG_HOME
   const xdg = process.env.XDG_CONFIG_HOME;
@@ -86,19 +83,11 @@ function getAdoCredentialsPath(): string {
   return join(getAdoCredentialsDir(), "pat");
 }
 
+function getAdoConfigPath(): string {
+  return join(getAdoCredentialsDir(), "config.json");
+}
+
 // ─── Config read/write ────────────────────────────────────────────────────
-
-function findConfigFile(dir: string): string | null {
-  for (const name of ["opencode.jsonc", "opencode.json"]) {
-    const p = join(dir, name);
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
-
-function findTuiConfigFile(dir: string): string {
-  return join(dir, "tui.json");
-}
 
 function readConfig(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
@@ -161,15 +150,6 @@ export function stripJsonComments(input: string): string {
 function writeConfig(path: string, data: Record<string, unknown>): void {
   const dir = dirname(path);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  if (!data["$schema"]) data["$schema"] = SCHEMA_URL;
-  writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf-8");
-}
-
-function writeTuiConfig(path: string, data: Record<string, unknown>): void {
-  const dir = dirname(path);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  if (!data["$schema"]) data["$schema"] = TUI_SCHEMA_URL;
-  if (data["mouse"] === undefined) data["mouse"] = true;
   writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
@@ -224,31 +204,46 @@ async function loadAdoConfig(): Promise<LoadedAdoConfig | undefined> {
     if (Object.keys(ado.profiles ?? {}).length > 0) return ado;
   }
 
-  const configDir = getOpenCodeConfigDir();
-
-  // Standalone ado.json takes precedence over the inline `ado` block.
-  const adoJsonPath = join(configDir, "ado.json");
-  if (existsSync(adoJsonPath)) {
-    const adoJson = readConfig(adoJsonPath);
-    const adoJsonProfiles = asRecord(adoJson["profiles"]);
-    if (adoJsonProfiles && Object.keys(adoJsonProfiles).length > 0) {
-      return {
-        defaultProfile: typeof adoJson["defaultProfile"] === "string" ? adoJson["defaultProfile"] : undefined,
-        profiles: adoJsonProfiles as Record<string, ProfileConfig>,
-      };
-    }
-  }
-
-  const configPath = findConfigFile(configDir);
-  if (!configPath) return undefined;
-  const config = readConfig(configPath);
-  const ado = asRecord(config["ado"]);
+  const ado = readCliAdo() ?? migrateLegacyAdo();
   const profiles = asRecord(ado?.["profiles"]);
   if (!ado || !profiles) return undefined;
   return {
     defaultProfile: typeof ado["defaultProfile"] === "string" ? ado["defaultProfile"] : undefined,
     profiles: profiles as Record<string, ProfileConfig>,
   };
+}
+
+function readCliAdo(): Record<string, unknown> | undefined {
+  const ado = asRecord(readConfig(getAdoConfigPath())["ado"]);
+  return asRecord(ado?.["profiles"]) ? ado : undefined;
+}
+
+function writeCliAdo(ado: Record<string, unknown>): string {
+  const path = getAdoConfigPath();
+  const config = readConfig(path);
+  config["ado"] = ado;
+  writeConfig(path, config);
+  return path;
+}
+
+/** One-time copy of profiles from the old OpenCode config into the CLI config. */
+function migrateLegacyAdo(): Record<string, unknown> | undefined {
+  const configDir = getOpenCodeConfigDir();
+  const candidates: Array<Record<string, unknown> | undefined> = [];
+  const adoJsonPath = join(configDir, "ado.json");
+  if (existsSync(adoJsonPath)) candidates.push(readConfig(adoJsonPath));
+  for (const name of ["opencode.jsonc", "opencode.json", "tui.json"]) {
+    const path = join(configDir, name);
+    if (!existsSync(path)) continue;
+    const config = readConfig(path);
+    const plugins = Array.isArray(config["plugin"]) ? config["plugin"] as unknown[] : [];
+    candidates.push(asRecord(config["ado"]), getPluginAdoConfig(plugins));
+  }
+  const ado = candidates.find((c) => asRecord(c?.["profiles"]) && Object.keys(c!["profiles"] as object).length > 0);
+  if (!ado) return undefined;
+  const path = writeCliAdo(ado);
+  console.error(`Migrated ADO profiles to ${path}`);
+  return ado;
 }
 
 function profileOrg(profile: ProfileConfig): string {
@@ -827,58 +822,9 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function isLocalAdoPluginSpec(spec: unknown): boolean {
-  if (typeof spec !== "string" || !spec.startsWith("file:")) return false;
-  try {
-    const packageRoot = spec.slice("file:".length);
-    const packageJsonPath = join(packageRoot, "package.json");
-    if (!existsSync(packageJsonPath)) return false;
-    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { name?: string };
-    return pkg.name === PLUGIN_SPEC;
-  } catch {
-    return false;
-  }
-}
-
-function isAdoPluginSpec(spec: unknown): boolean {
-  return typeof spec === "string"
-    && (spec === PLUGIN_SPEC || spec.startsWith(`${PLUGIN_SPEC}@`) || isLocalAdoPluginSpec(spec));
-}
-
-function getPackageVersion(): string | undefined {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    for (const path of [
-      join(here, "..", "..", "package.json"),
-      join(here, "..", "package.json"),
-    ]) {
-      if (!existsSync(path)) continue;
-      const pkg = JSON.parse(readFileSync(path, "utf-8")) as { version?: string };
-      if (pkg.version) return pkg.version;
-    }
-  } catch { /* ignore */ }
-  return undefined;
-}
-
-function getVersionedPluginSpec(): string {
-  const version = getPackageVersion();
-  return version ? `${PLUGIN_SPEC}@${version}` : PLUGIN_SPEC;
-}
-
-function getLocalPluginSpec(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const packageRoot = realpathSync(join(here, "..", ".."));
-  return `file:${packageRoot.replace(/\\/g, "/")}`;
-}
-
-function pluginMatches(entry: unknown): boolean {
-  if (isAdoPluginSpec(entry)) return true;
-  if (Array.isArray(entry)) return isAdoPluginSpec(entry[0]);
-  return false;
-}
-
 function getPluginAdoConfig(plugins: unknown[]): Record<string, unknown> | undefined {
-  const entry = plugins.find(pluginMatches);
+  const entry = plugins.find((e) => Array.isArray(e) && typeof e[0] === "string"
+    && (e[0] === PLUGIN_SPEC || e[0].startsWith(`${PLUGIN_SPEC}@`) || e[0].startsWith("file:")));
   if (!Array.isArray(entry)) return undefined;
   const options = asRecord(entry[1]);
   if (!options) return undefined;
@@ -886,64 +832,11 @@ function getPluginAdoConfig(plugins: unknown[]): Record<string, unknown> | undef
   return nested ?? options;
 }
 
-function upsertPluginConfig(
-  plugins: unknown[],
-  adoConfig: Record<string, unknown>,
-  pluginSpec = getVersionedPluginSpec(),
-): void {
-  const entry = [pluginSpec, adoConfig];
-  const index = plugins.findIndex(pluginMatches);
-  if (index >= 0) plugins[index] = entry;
-  else plugins.push(entry);
-}
-
-function readTuiConfig(path: string): Record<string, unknown> {
-  return existsSync(path) ? readConfig(path) : {};
-}
-
-function syncTuiPluginConfig(configDir: string, adoConfig: Record<string, unknown>, pluginSpec = getVersionedPluginSpec()): string {
-  const tuiPath = findTuiConfigFile(configDir);
-  const tuiConfig = readTuiConfig(tuiPath);
-  if (!Array.isArray(tuiConfig["plugin"])) tuiConfig["plugin"] = [];
-  const tuiPlugins = tuiConfig["plugin"] as unknown[];
-  upsertPluginConfig(tuiPlugins, adoConfig, pluginSpec);
-  writeTuiConfig(tuiPath, tuiConfig);
-  return tuiPath;
-}
-
-function findExistingAdoConfig(config: Record<string, unknown>, tuiConfig?: Record<string, unknown>) {
-  const plugins = Array.isArray(config["plugin"]) ? config["plugin"] as unknown[] : [];
-  const tuiPlugins = Array.isArray(tuiConfig?.["plugin"]) ? tuiConfig?.["plugin"] as unknown[] : [];
-  return getPluginAdoConfig(plugins)
-    ?? asRecord(config["ado"])
-    ?? getPluginAdoConfig(tuiPlugins);
-}
-
 function normalizeAdoConfig(ado: Record<string, unknown>): Record<string, unknown> {
   if (!ado["profiles"] || typeof ado["profiles"] !== "object") {
     throw new Error("No ADO profiles found. Run `npx @cioffinahuel/opencode-ado init` first.");
   }
   return ado;
-}
-
-function syncExistingConfig(pluginSpec = getVersionedPluginSpec()): { configPath: string; tuiPath: string; pluginSpec: string } {
-  const configDir = getOpenCodeConfigDir();
-  const configPath = findConfigFile(configDir) ?? join(configDir, "opencode.json");
-  const tuiPath = findTuiConfigFile(configDir);
-  const config = readConfig(configPath);
-  const tuiConfig = readTuiConfig(tuiPath);
-
-  const ado = normalizeAdoConfig(findExistingAdoConfig(config, tuiConfig) ?? {});
-
-  if (!Array.isArray(config["plugin"])) config["plugin"] = [];
-  const plugins = config["plugin"] as unknown[];
-  delete config["ado"];
-  upsertPluginConfig(plugins, ado, pluginSpec);
-
-  const writtenTuiPath = syncTuiPluginConfig(configDir, ado, pluginSpec);
-  writeConfig(configPath, config);
-
-  return { configPath, tuiPath: writtenTuiPath, pluginSpec };
 }
 
 // ─── TOML helpers ──────────────────────────────────────────────────────────
@@ -977,7 +870,7 @@ async function writeAdoConfig(configPath: string, defaults?: Record<string, stri
   console.log();
   console.log(`  ${bold("── Work Item Creation ──")}`);
   console.log();
-  const wiCreateEnabled = await yesNo("Allow work item creation from plugin?");
+  const wiCreateEnabled = await yesNo("Allow work item creation from the CLI?");
   const wiAllowedTypesStr = await ask("Allowed WI types (comma-separated, empty = all)", d["allowed_types"] ?? "");
   const wiAllowedTypes = wiAllowedTypesStr
     ? wiAllowedTypesStr.split(",").map((s) => s.trim()).filter(Boolean)
@@ -1029,7 +922,7 @@ require_parent = ${wiRequireParent}
 
 async function runInit(_cwd: string): Promise<number> {
   console.log();
-  console.log(bold("  Azure DevOps Plugin for OpenCode"));
+  console.log(bold("  Azure DevOps CLI"));
   console.log("  ─────────────────────────────────────────");
   console.log();
 
@@ -1048,7 +941,7 @@ async function runInit(_cwd: string): Promise<number> {
   if (existingPAT) {
     console.log(`  ${green("✓")} Found existing PAT — will reuse it`);
   } else {
-    console.log("  Your PAT is stored securely in ~/.azure-devops-cli/pat (never in opencode.json)");
+    console.log("  Your PAT is stored securely in ~/.azure-devops-cli/pat (never in the config file)");
     const pat = await ask("Enter your PAT");
     if (!pat) { console.log(yellow("  ✗ PAT is required")); return 1; }
     storePAT(pat);
@@ -1159,43 +1052,22 @@ async function runInit(_cwd: string): Promise<number> {
   if (!ok) { console.log(yellow("  Cancelled")); return 0; }
 
   // ── Step 5: Write config ──────────────────────────────────────────
-  const configDir = getOpenCodeConfigDir();
-  const configPath = findConfigFile(configDir) ?? join(configDir, "opencode.json");
-  const config = readConfig(configPath);
-
-  // Ensure plugin array
-  if (!Array.isArray(config["plugin"])) config["plugin"] = [];
-  const plugins = config["plugin"] as unknown[];
-
-  // Build plugin options — merge with existing profiles. OpenCode 1.4 rejects
-  // arbitrary top-level keys, so ADO config must live in plugin options.
-  const ado = getPluginAdoConfig(plugins) ?? asRecord(config["ado"]) ?? {};
-
+  const ado = readCliAdo() ?? migrateLegacyAdo() ?? {};
   if (!ado["profiles"] || typeof ado["profiles"] !== "object") ado["profiles"] = {};
   const existingProfiles = ado["profiles"] as Record<string, ProfileConfig>;
-
   for (const [name, p] of Object.entries(profiles)) {
     existingProfiles[name] = p;
   }
-
   if (defaultProfileName) ado["defaultProfile"] = defaultProfileName;
-  delete config["ado"];
-  upsertPluginConfig(plugins, ado);
-  const tuiPath = syncTuiPluginConfig(configDir, ado);
-
-  writeConfig(configPath, config);
+  const configPath = writeCliAdo(ado);
   console.log();
-  console.log(`  ${green("✓")} Server plugin added to config`);
-  console.log(`  ${green("✓")} TUI sidebar plugin added to tui.json`);
   console.log(`  ${green("✓")} Wrote ${configPath}`);
-  console.log(`  ${green("✓")} Wrote ${tuiPath}`);
 
   // ── Step 6: Next steps ────────────────────────────────────────────
   console.log();
-  console.log(bold("  Done! Restart OpenCode to activate the plugin."));
+  console.log(bold("  Done!"));
   console.log();
-  console.log(`  The LLM can now use: ${cyan("ado_pr_list")}, ${cyan("ado_pr_get <repo> <id>")}, ${cyan("ado_pr_vote <repo> <id> approve")}`);
-  console.log(`  The sidebar will show PRs pending your review.`);
+  console.log(`  Try: ${cyan("ado pr list")}, ${cyan("ado wi list")}, ${cyan("ado profile list")}`);
   if (platform() === "win32") {
     console.log();
     console.log(yellow("  ⚠ Restart your terminal for the AZURE_DEVOPS_PAT env var to take effect."));
@@ -1251,28 +1123,11 @@ async function runConfig(cwd: string): Promise<number> {
 // ─── Show Command ─────────────────────────────────────────────────────────
 
 async function runShow(): Promise<number> {
-  const configDir = getOpenCodeConfigDir();
-
-  // Standalone ado.json takes precedence over the inline `ado` block.
-  const adoJsonPath = join(configDir, "ado.json");
-  let configPath: string | null = existsSync(adoJsonPath) ? adoJsonPath : null;
-  let ado: Record<string, unknown> | undefined = configPath
-    ? asRecord(readConfig(configPath))
-    : undefined;
-
-  if (!ado?.["profiles"]) {
-    configPath = findConfigFile(configDir);
-    if (!configPath) {
-      console.log(yellow("  No opencode.json found in " + configDir));
-      return 1;
-    }
-    const config = readConfig(configPath);
-    const plugins = Array.isArray(config["plugin"]) ? config["plugin"] as unknown[] : [];
-    ado = getPluginAdoConfig(plugins) ?? asRecord(config["ado"]);
-  }
-
-  if (!ado?.["profiles"]) {
-    console.log(yellow("  No ado.profiles configured"));
+  const configPath = getAdoConfigPath();
+  const ado = readCliAdo() ?? migrateLegacyAdo();
+  if (!ado) {
+    console.log(yellow("  No ADO profiles configured in " + configPath));
+    console.log("    Run: npx @cioffinahuel/opencode-ado init");
     return 1;
   }
 
@@ -1304,56 +1159,16 @@ async function runShow(): Promise<number> {
   return 0;
 }
 
-// ─── Sync Command ─────────────────────────────────────────────────────────
-
-async function runSync(): Promise<number> {
-  try {
-    const { configPath, tuiPath, pluginSpec } = syncExistingConfig();
-    console.log();
-    console.log(`  ${green("✓")} Server plugin registered in ${configPath}`);
-    console.log(`  ${green("✓")} TUI sidebar plugin registered in ${tuiPath}`);
-    console.log(`  ${green("✓")} Plugin spec: ${pluginSpec}`);
-    console.log();
-    console.log("  Restart OpenCode to reload plugins.");
-    console.log();
-    return 0;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.log(yellow(`  ${message}`));
-    return 1;
-  }
-}
-
-async function runSyncLocal(): Promise<number> {
-  try {
-    const { configPath, tuiPath, pluginSpec } = syncExistingConfig(getLocalPluginSpec());
-    console.log();
-    console.log(`  ${green("✓")} Server plugin registered in ${configPath}`);
-    console.log(`  ${green("✓")} TUI sidebar plugin registered in ${tuiPath}`);
-    console.log(`  ${green("✓")} Local plugin spec: ${pluginSpec}`);
-    console.log();
-    console.log("  Restart OpenCode to load the local workspace build.");
-    console.log();
-    return 0;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.log(yellow(`  ${message}`));
-    return 1;
-  }
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────
 
 const USAGE = [
   "",
   bold("  @cioffinahuel/opencode-ado"),
-  "  Azure DevOps plugin for OpenCode",
+  "  Azure DevOps CLI",
   "",
   "  Usage:",
   `    ${cyan("npx @cioffinahuel/opencode-ado init")}    Interactive setup wizard`,
   `    ${cyan("npx @cioffinahuel/opencode-ado config")}  Generate .adoconfig.toml for this project`,
-  `    ${cyan("npx @cioffinahuel/opencode-ado sync")}    Register existing config in OpenCode + TUI`,
-  `    ${cyan("node dist/bin/opencode-ado.js sync-local")}  Register local workspace build without publishing`,
   `    ${cyan("npx @cioffinahuel/opencode-ado show")}    Show current config`,
   `    ${cyan("ado profile [list|use <name>]")}          Show/list/switch ADO profile`,
   `    ${cyan("ado pr <list|get|threads|diff|context|comment|reply|vote|select|file|create|complete|abandon|publish|reviewers|chain>")}`,
@@ -1372,8 +1187,6 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   }
   if (command === "init") return runInit(process.cwd());
   if (command === "config") return runConfig(process.cwd());
-  if (command === "sync" || command === "repair" || command === "install") return runSync();
-  if (command === "sync-local") return runSyncLocal();
   if (command === "show") return runShow();
   const groups: Record<string, (argv: string[]) => Promise<number>> = {
     profile: runProfileGroup, pr: runPrGroup, wi: runWiGroup, pipeline: runPipelineGroup,

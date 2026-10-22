@@ -15,6 +15,7 @@ let root: string;
 let logs: string[];
 let calls: Array<{ url: string; init?: RequestInit }>;
 let originalXdg: string | undefined;
+let originalHome: string | undefined;
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
@@ -28,6 +29,8 @@ beforeEach(async () => {
   }));
   originalXdg = process.env.XDG_CONFIG_HOME;
   process.env.XDG_CONFIG_HOME = root;
+  originalHome = process.env.HOME;
+  process.env.HOME = root;
   logs = [];
   vi.spyOn(console, "log").mockImplementation((m = "") => { logs.push(String(m)); });
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -45,6 +48,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   if (originalXdg === undefined) delete process.env.XDG_CONFIG_HOME;
   else process.env.XDG_CONFIG_HOME = originalXdg;
+  process.env.HOME = originalHome;
   await rm(root, { recursive: true, force: true });
 });
 

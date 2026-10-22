@@ -1,7 +1,5 @@
 /**
- * Shared chain runner functions extracted from index.ts handlers.
- * These functions contain the real business logic for PR creation and
- * chained PR orchestration, decoupled from the OpenCode/Pi plugin closures.
+ * Business logic for PR creation and chained PR orchestration.
  */
 
 import type { AdoClient } from "./ado-client.js";

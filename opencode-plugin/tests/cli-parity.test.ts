@@ -13,6 +13,7 @@ describe("opencode-ado CLI parity", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let originalXdgConfigHome: string | undefined;
   let originalPat: string | undefined;
+  let originalHome: string | undefined;
 
   beforeEach(async () => {
     configRoot = join(tmpdir(), `opencode-ado-test-${crypto.randomUUID()}`);
@@ -21,6 +22,8 @@ describe("opencode-ado CLI parity", () => {
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     originalPat = process.env.AZURE_DEVOPS_PAT;
     process.env.XDG_CONFIG_HOME = configRoot;
+    originalHome = process.env.HOME;
+    process.env.HOME = configRoot;
     process.env.AZURE_DEVOPS_PAT = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuv";
 
     logs = [];
@@ -34,6 +37,7 @@ describe("opencode-ado CLI parity", () => {
     vi.restoreAllMocks();
     if (originalXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    process.env.HOME = originalHome;
     if (originalPat === undefined) delete process.env.AZURE_DEVOPS_PAT;
     else process.env.AZURE_DEVOPS_PAT = originalPat;
     await rm(configRoot, { recursive: true, force: true });

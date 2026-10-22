@@ -1,5 +1,5 @@
 /**
- * Shared types, config helpers, and formatting utilities for the ADO plugin.
+ * Shared types, config helpers, and formatting utilities for the ADO CLI.
  *
  * Used by both the server module (index.ts) and the TUI module (tui.tsx).
  * Import from here instead of duplicating definitions.
@@ -61,7 +61,7 @@ export interface WorkItemSummary {
 
 // ─── Config helpers ───────────────────────────────────────────────────────
 
-/** Coerce an unknown plugin config value into an AdoConfig, or return undefined. */
+/** Coerce an unknown config value into an AdoConfig, or return undefined. */
 export function asAdoConfig(value: unknown): AdoConfig | undefined {
   if (!value || typeof value !== "object") return undefined;
   const maybe = value as { ado?: unknown; profiles?: unknown };
@@ -87,7 +87,7 @@ export function resolveActiveProfile(config: AdoConfig): { name: string; profile
   }
   // 3. First profile
   const entries = Object.entries(config.profiles);
-  if (entries.length === 0) throw new Error("No ADO profiles configured in opencode.json under 'ado.profiles'");
+  if (entries.length === 0) throw new Error("No ADO profiles configured. Run `ado init` to create ~/.azure-devops-cli/config.json");
   const [name, profile] = entries[0];
   return { name, profile };
 }

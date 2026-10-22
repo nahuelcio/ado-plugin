@@ -1,10 +1,7 @@
 /**
  * ADO HTTP Client and business logic helpers.
  *
- * Framework-agnostic — used by both the OpenCode plugin (index.ts)
- * and the Pi extension (pi-entry.ts).
- *
- * Extracted from index.ts to avoid duplicating ~500 lines of ADO logic.
+ * Used by the `ado` CLI through cli-commands.ts.
  */
 
 import type { AdoConfig, AdoProfile } from "./shared.js";
@@ -847,7 +844,7 @@ export interface ResolvedClient {
 
 /**
  * Resolve the active profile and create an ADO client.
- * Used by both OpenCode and Pi entry points.
+ * Used by the CLI commands.
  */
 export async function createClientFromConfig(
   config: AdoConfig,
@@ -943,7 +940,7 @@ export async function resolvePrArgsAuto(
   const selected = getSelectedPr();
   if (!selected) {
     throw new Error(
-      "No PR specified. Provide prId (auto-discovers across profiles), repo+prId, or select a PR in the sidebar.",
+      "No PR specified. Provide prId (auto-discovers across profiles), repo+prId, or select one with `ado pr select`.",
     );
   }
   const profileName = args.profile ?? profileForRepo(config, selected.repo) ?? getActiveProfile() ?? "";

@@ -1,8 +1,7 @@
 # ADO Commands
 
-The `ado` CLI mirrors the OpenCode plugin tools one-to-one — same output, same
-behavior — so you can inspect and act on Azure DevOps without loading plugin
-tools into context.
+The `ado` CLI is the single interface to Azure DevOps — inspect and act on PRs,
+work items, pipelines and profiles with one command per action.
 
 ## Install
 
@@ -11,7 +10,7 @@ tools into context.
 ## Conventions
 
 - `[repo]` is optional. When omitted, the PR is auto-discovered by ID across all
-  configured profiles (or the sidebar-selected PR is used). When given, the
+  configured profiles (or the PR chosen with `ado pr select` is used). When given, the
   profile whose `repos` lists it is used; a repo listed by several profiles needs
   `--profile` unless the active profile is one of them.
 - `--profile <name>` overrides the active profile on any command.
@@ -21,7 +20,7 @@ tools into context.
   `--comment`) on `pr comment`, `pr reply`, `wi comment` and `wi update`.
 - PR IDs and work item IDs are positional; flags carry everything else.
 - Work item commands accept either the numeric ID or the full work item URL.
-- Output is the same Markdown the plugin returns to the LLM.
+- Output is Markdown.
 
 ## Profiles
 
@@ -44,7 +43,7 @@ tools into context.
 | `ado pr comment [repo] <prId> --comment <text> \| --comment-file <path> [--file <repo path>] [--line <n>]` | Start a new thread, optionally anchored to a file/line. `--file` is the repo path to anchor on, not the body. |
 | `ado pr reply [repo] <prId> <threadId> [--comment <text> \| --comment-file <path>] [--status active\|fixed\|wontFix\|closed\|byDesign\|pending]` | Reply inside an existing thread and/or set its status. `--status` alone resolves without commenting. |
 | `ado pr vote [repo] <prId> <approve\|reject\|wait\|suggestions> [--comment <text>]` | Vote on the PR. |
-| `ado pr select [repo] <prId>` | Select a PR in the sidebar (persists). |
+| `ado pr select [repo] <prId>` | Select a default PR for later commands (persists). |
 | `ado pr create --repo <r> --source <branch> --target <branch> --title <t> [--description <d>] [--wi 1,2] [--draft]` | Create a single PR with optional work item links. |
 | `ado pr complete [repo] <prId> [--strategy squash\|rebase\|noFastForward\|rebaseMerge] [--delete-source] [--bypass]` | Complete (merge) the PR. Defaults to squash, keeps the source branch. |
 | `ado pr abandon [repo] <prId>` | Abandon the PR. |
@@ -84,8 +83,7 @@ tools into context.
 | --- | --- |
 | `ado init` | Interactive setup wizard (org, PAT, profiles, project rules). |
 | `ado config` | Generate/refresh `.adoconfig.toml` for this project. |
-| `ado sync` | Register existing config in OpenCode + TUI (`repair`/`install` are aliases). |
-| `ado show` | Show the current OpenCode config and PAT status. |
+| `ado show` | Show configured profiles and PAT status. |
 
 ## Common errors
 

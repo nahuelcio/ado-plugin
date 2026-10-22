@@ -1,10 +1,9 @@
 /**
  * Shared command implementations — single source of truth for the 22 ADO
- * operations. Both the OpenCode plugin tools (index.ts) and the `ado` CLI
- * (bin/opencode-ado.ts) call these so their output stays identical.
+ * operations, called by the `ado` CLI (bin/opencode-ado.ts).
  *
  * Each function takes a resolved AdoConfig plus typed args and returns the
- * formatted string the caller prints / returns to the LLM.
+ * formatted string the caller prints.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";

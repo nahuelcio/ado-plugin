@@ -12,7 +12,11 @@ PRs, reviews, work items, and multi-project profiles — all behind one binary.
 
 ```bash
 npm i -g @cioffinahuel/opencode-ado     # provides the `ado` command
+npx skills add nahuelcio/ado-plugin     # installs the `ado` agent skill
 ```
+
+`npx skills add` detects your agents (Claude Code, OpenCode, Codex, …) and puts
+the skill where each one loads it. Update it later with `npx skills update ado`.
 
 No install needed for one-off setup — `npx` runs it on the fly (use the full
 package name, not a bare `ado`):
@@ -27,10 +31,12 @@ Interactive wizard. Collects your organization, a PAT, and one profile per
 project (with the repos to monitor):
 
 ```bash
-ado init        # org + PAT + profiles → writes opencode.json + optional .adoconfig.toml
+ado init        # org + PAT + profiles → writes ~/.azure-devops-cli/config.json + optional .adoconfig.toml
 ado show        # show configured profiles and PAT status
-ado sync        # re-register the bundled OpenCode/Pi plugin after edits
 ```
+
+- **Profiles** live in `~/.azure-devops-cli/config.json`. Profiles from older
+  versions (stored in the OpenCode config) are migrated there automatically.
 
 - **PAT** is stored at `~/.azure-devops-cli/pat` (chmod 600), never in plain config.
   You can also set `AZURE_DEVOPS_PAT`. Required scopes: **Code** (R/W),
@@ -62,32 +68,33 @@ Full command reference: [`skills/ado/references/commands.md`](skills/ado/referen
 
 ## Using it from an AI agent
 
-The repo ships a skill at [`skills/ado/SKILL.md`](skills/ado/SKILL.md). Point your
-agent's skill loader at this directory; the agent then drives Azure DevOps through
-the `ado` CLI — reading state before acting, with no plugin tools loaded into context.
+The repo ships a skill at [`skills/ado/SKILL.md`](skills/ado/SKILL.md). Install it
+with `npx skills add nahuelcio/ado-plugin`; the agent then drives Azure DevOps through
+the `ado` CLI — reading state before acting, with no tools loaded into context.
 
 ## Command groups
 
 | Group | Commands |
 |-------|----------|
 | `ado profile` | `list`, `use <name>` |
-| `ado pr` | `list`, `get`, `threads`, `diff`, `context`, `file`, `comment`, `vote`, `select`, `create`, `chain` |
-| `ado wi` | `list`, `get`, `types`, `related`, `update`, `comment`, `create`, `create-child` |
-| setup | `init`, `config`, `show`, `sync` |
+| `ado pr` | `list`, `get`, `threads`, `diff`, `context`, `comment`, `reply`, `vote`, `select`, `file`, `create`, `complete`, `abandon`, `publish`, `reviewers`, `chain` |
+| `ado wi` | `list`, `get`, `types`, `fields`, `query`, `update`, `link`, `attach`, `attachments`, `comment`, `related`, `create`, `create-child` |
+| `ado pipeline` | `list`, `runs`, `run` |
+| setup | `init`, `config`, `show` |
 
-## Also available as a plugin
+## Upgrading from 0.x
 
-The same package still registers as an **OpenCode** and **Pi** plugin (exposing the
-22 `ado_*` tools and a TUI sidebar) for setups that want in-process tools. The CLI
-and the plugin share the same config and behavior. See `ado sync` and the plugin
-options in `opencode.json`.
+1.0 drops the OpenCode/Pi plugin, its `ado_*` tools and the TUI sidebar — the
+package is now the CLI plus the skill. Remove `@cioffinahuel/opencode-ado` from
+the `plugin` arrays in `opencode.json` / `tui.json`; your profiles are migrated
+to `~/.azure-devops-cli/config.json` the first time you run `ado`.
 
 ## Development
 
 ```bash
 cd opencode-plugin
 npm install
-npm run build          # builds CLI + OpenCode + Pi
+npm run build
 npm test
 ```
 
