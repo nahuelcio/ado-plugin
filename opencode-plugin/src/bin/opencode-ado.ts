@@ -388,14 +388,179 @@ async function runCmd(fn: (config: AdoConfig) => Promise<string> | string): Prom
   }
 }
 
+// ─── Command spec: usage + accepted flags ────────────────────────────────────
+
+const WI_CREATE_FLAGS = ["type", "title", "description", "area", "iteration", "priority", "assigned", "state", "tags", "field", "parent"];
+
+/**
+ * Every subcommand with its usage line and the flags it actually reads.
+ * `--profile` and `--help` are accepted everywhere. Anything else is an error:
+ * silently ignoring an invented flag made agents believe it had worked.
+ */
+const CLI: Record<string, Record<string, { usage: string; flags: string[] }>> = {
+  profile: {
+    get: { usage: "ado profile [get] [<name>]", flags: [] },
+    list: { usage: "ado profile list", flags: [] },
+    use: { usage: "ado profile use <name>", flags: [] },
+  },
+  pipeline: {
+    list: { usage: "ado pipeline [list]", flags: [] },
+    runs: { usage: "ado pipeline runs <pipelineId> [--limit <n>]", flags: ["id", "limit"] },
+    run: { usage: "ado pipeline run <pipelineId> [--branch <b>]", flags: ["id", "branch"] },
+  },
+  pr: {
+    list: { usage: "ado pr list", flags: [] },
+    get: { usage: "ado pr get [repo] <prId>", flags: [] },
+    threads: { usage: "ado pr threads [repo] <prId>  (full comments, thread ids for pr reply)", flags: [] },
+    diff: { usage: "ado pr diff [repo] <prId> [--hunks]", flags: ["hunks"] },
+    context: { usage: "ado pr context [repo] <prId>", flags: [] },
+    comment: {
+      usage: "ado pr comment [repo] <prId> --comment <text> | --comment-file <path> [--file <repo path to anchor on>] [--line <n>]",
+      flags: ["comment", "comment-file", "file", "line"],
+    },
+    reply: {
+      usage: "ado pr reply [repo] <prId> <threadId> [--comment <text> | --comment-file <path>] [--status active|fixed|wontFix|closed|byDesign|pending]",
+      flags: ["comment", "comment-file", "status", "thread"],
+    },
+    vote: { usage: "ado pr vote [repo] <prId> <approve|reject|wait|suggestions> [--comment <text>]", flags: ["comment"] },
+    select: { usage: "ado pr select [repo] <prId>", flags: [] },
+    file: { usage: "ado pr file [repo] <prId> --path <file> [--start <n>] [--end <n>]", flags: ["path", "start", "end"] },
+    create: {
+      usage: "ado pr create --repo <r> --source <branch> --target <branch> --title <t> [--description <d>] [--wi 1,2] [--draft]",
+      flags: ["repo", "source", "target", "title", "description", "wi", "draft"],
+    },
+    complete: {
+      usage: "ado pr complete [repo] <prId> [--strategy squash|rebase|noFastForward|rebaseMerge] [--delete-source] [--bypass]",
+      flags: ["strategy", "delete-source", "bypass"],
+    },
+    abandon: { usage: "ado pr abandon [repo] <prId>", flags: [] },
+    publish: { usage: "ado pr publish [repo] <prId>", flags: [] },
+    reviewers: { usage: "ado pr reviewers [repo] <prId> --add <user1,user2> [--required]", flags: ["add", "required"] },
+    chain: {
+      usage: "ado pr chain --repo <r> --wi 1,2,3 [--base <branch>] [--strategy feature-chain|stacked] [--prefix <p>] [--branches a,b,c]",
+      flags: ["repo", "wi", "base", "strategy", "prefix", "branches"],
+    },
+  },
+  wi: {
+    list: { usage: "ado wi list [--state <s>] [--assigned <user|me>] [--tag <t>] [--type <type>]", flags: ["state", "assigned", "tag", "type"] },
+    get: { usage: "ado wi get <id>", flags: [] },
+    types: { usage: "ado wi types", flags: [] },
+    fields: { usage: "ado wi fields --type <type>", flags: ["type"] },
+    query: { usage: "ado wi query \"SELECT [System.Id] FROM WorkItems WHERE ...\"", flags: ["wiql"] },
+    update: {
+      usage: "ado wi update <id> [--title <t>] [--description <d>] [--state <s>] [--priority <n>] [--assigned <user>] [--area <p>] [--iteration <p>] [--tags <a;b>] [--field <Name>=<value>] [--comment <text> | --comment-file <path>] [--format markdown|html]",
+      flags: ["title", "description", "state", "priority", "assigned", "area", "iteration", "tags", "field", "comment", "comment-file", "format"],
+    },
+    link: {
+      usage: "ado wi link <id> --parent|--child|--related|--duplicate|--successor|--predecessor <targetId> [--comment <text>]",
+      flags: ["parent", "child", "related", "duplicate", "successor", "predecessor", "comment"],
+    },
+    attach: { usage: "ado wi attach <id> --file <path> [--comment <text>]", flags: ["file", "comment"] },
+    attachments: { usage: "ado wi attachments <id> [--dest <folder>]", flags: ["dest"] },
+    comment: {
+      usage: "ado wi comment <id> --comment <text> | --comment-file <path> [--format markdown|html]  (markdown by default)",
+      flags: ["comment", "comment-file", "format"],
+    },
+    related: { usage: "ado wi related <id> [--state <s>] [--type <t>]", flags: ["state", "type"] },
+    create: {
+      usage: "ado wi create --title <t> [--type <type>] [--description <d>] [--area <p>] [--iteration <p>] [--priority <n>] [--assigned <user>] [--state <s>] [--tags <a;b>] [--parent <id>] [--field <Name>=<value>]",
+      flags: WI_CREATE_FLAGS,
+    },
+    "create-child": {
+      usage: "ado wi create-child --parent <id> --title <t> [--type <type>] [--description <d>] [--area <p>] [--iteration <p>] [--priority <n>] [--assigned <user>] [--state <s>] [--tags <a;b>] [--field <Name>=<value>]",
+      flags: WI_CREATE_FLAGS,
+    },
+  },
+};
+
+function usage(group: string, sub: string): string {
+  return yellow(`Usage: ${CLI[group][sub].usage}`);
+}
+
+function groupUsage(group: string): string {
+  return Object.values(CLI[group]).map((c) => `  ${c.usage}`).join("\n");
+}
+
+/** Levenshtein distance, for "did you mean" on unknown flags. */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function suggestFlag(flag: string, allowed: string[]): string | undefined {
+  const f = flag.split("=")[0].toLowerCase();
+  let best: { name: string; d: number } | undefined;
+  for (const name of allowed) {
+    const n = name.toLowerCase();
+    const d = f.startsWith(n) || n.startsWith(f) ? 0 : editDistance(f, n);
+    if (!best || d < best.d) best = { name, d };
+  }
+  return best && best.d <= Math.max(2, Math.floor(f.length / 3)) ? best.name : undefined;
+}
+
+/**
+ * Handle `--help`, unknown subcommands and unknown flags before any ADO call.
+ * Returns an exit code when the command must stop here, undefined to proceed.
+ */
+function preflight(group: string, argv: string[], defaultSub?: string): number | undefined {
+  const cmds = CLI[group];
+  const sub = argv[0];
+  const known = sub !== undefined && Object.hasOwn(cmds, sub);
+  // `ado profile work` / `ado pipeline --profile x` run the group's default subcommand.
+  const key = known ? sub : defaultSub && (sub === undefined || group === "profile" || sub.startsWith("-")) ? defaultSub : undefined;
+  const rest = known ? argv.slice(1) : argv;
+
+  if (argv.includes("--help") || argv.includes("-h") || sub === "help") {
+    console.log(known ? `Usage: ${cmds[sub].usage}` : `Usage:\n${groupUsage(group)}`);
+    return 0;
+  }
+  if (!key) {
+    console.log(yellow(`Unknown ${group} command: ${sub ?? "(none)"}`));
+    console.log(`Usage:\n${groupUsage(group)}`);
+    return 1;
+  }
+  const allowed = [...cmds[key].flags, "profile"];
+  for (const flag of Object.keys(parseArgs(rest).flags)) {
+    if (allowed.includes(flag)) continue;
+    const hint = suggestFlag(flag, allowed);
+    console.log(yellow(`Unknown flag --${flag} for 'ado ${group} ${key}'.${hint ? ` Did you mean --${hint}?` : ""}`));
+    console.log(usage(group, key));
+    return 1;
+  }
+  return undefined;
+}
+
+/** Comment body from `--comment` or `--comment-file` (UTF-8, trailing whitespace trimmed). */
+function commentText(flags: ParsedArgs["flags"]): string | undefined {
+  const file = flagStr(flags, "comment-file");
+  const inline = flagStr(flags, "comment");
+  if (file !== undefined && inline !== undefined) throw new Error("Use --comment or --comment-file, not both.");
+  return file !== undefined ? readFileSync(file, "utf-8").trimEnd() : inline;
+}
+
+function commentFormat(flags: ParsedArgs["flags"]): "markdown" | "html" | undefined {
+  const format = flagStr(flags, "format")?.toLowerCase();
+  if (format === undefined || format === "markdown" || format === "html") return format;
+  throw new Error(`Invalid --format '${format}'. Use markdown|html.`);
+}
+
 // ─── Group dispatchers ──────────────────────────────────────────────────────
 
 async function runProfileGroup(argv: string[]): Promise<number> {
+  const stop = preflight("profile", argv, "get");
+  if (stop !== undefined) return stop;
   const sub = argv[0];
   if (sub === "list") return runCmd((c) => cmd.profileList(c));
   if (sub === "use") {
     const name = argv[1];
-    if (!name) { console.log(yellow("Usage: ado profile use <name>")); return 1; }
+    if (!name) { console.log(usage("profile", "use")); return 1; }
     return runCmd((c) => cmd.profileUse(c, { name }));
   }
   // Default / `get`: show active profile. Optional name, positional or `--profile`.
@@ -404,8 +569,10 @@ async function runProfileGroup(argv: string[]): Promise<number> {
 }
 
 async function runPipelineGroup(argv: string[]): Promise<number> {
-  const sub = argv[0];
-  const { positional, flags } = parseArgs(argv.slice(1));
+  const stop = preflight("pipeline", argv, "list");
+  if (stop !== undefined) return stop;
+  const sub = argv[0]?.startsWith("-") ? undefined : argv[0];
+  const { positional, flags } = parseArgs(sub === undefined ? argv : argv.slice(1));
   const profile = flagStr(flags, "profile");
 
   switch (sub) {
@@ -414,12 +581,12 @@ async function runPipelineGroup(argv: string[]): Promise<number> {
       return runCmd((c) => cmd.pipelineList(c, { profile }));
     case "runs": {
       const pipelineId = flagNum(flags, "id") ?? Number(positional[0]);
-      if (!Number.isFinite(pipelineId)) { console.log(yellow("Usage: ado pipeline runs <pipelineId> [--limit <n>]")); return 1; }
+      if (!Number.isFinite(pipelineId)) { console.log(usage("pipeline", "runs")); return 1; }
       return runCmd((c) => cmd.pipelineRuns(c, { pipelineId, limit: flagNum(flags, "limit"), profile }));
     }
     case "run": {
       const pipelineId = flagNum(flags, "id") ?? Number(positional[0]);
-      if (!Number.isFinite(pipelineId)) { console.log(yellow("Usage: ado pipeline run <pipelineId> [--branch <b>]")); return 1; }
+      if (!Number.isFinite(pipelineId)) { console.log(usage("pipeline", "run")); return 1; }
       return runCmd((c) => cmd.pipelineRun(c, { pipelineId, branch: flagStr(flags, "branch"), profile }));
     }
     default:
@@ -429,6 +596,8 @@ async function runPipelineGroup(argv: string[]): Promise<number> {
 }
 
 async function runPrGroup(argv: string[]): Promise<number> {
+  const stop = preflight("pr", argv);
+  if (stop !== undefined) return stop;
   const sub = argv[0];
   const { positional, flags } = parseArgs(argv.slice(1));
   const profile = flagStr(flags, "profile");
@@ -446,24 +615,38 @@ async function runPrGroup(argv: string[]): Promise<number> {
     case "context":
       return runCmd((c) => cmd.prContext(c, { ...target, profile }));
     case "comment": {
-      const comment = flagStr(flags, "comment");
-      if (!comment) { console.log(yellow("Usage: ado pr comment [repo] <prId> --comment <text> [--file <path>] [--line <n>]")); return 1; }
+      const comment = commentText(flags);
+      if (!comment) { console.log(usage("pr", "comment")); return 1; }
       return runCmd((c) => cmd.prComment(c, { ...target, comment, filePath: flagStr(flags, "file"), line: flagNum(flags, "line"), profile }));
+    }
+    case "reply": {
+      const ids = positional.filter((p) => /^\d+$/.test(p)).map(Number);
+      const threadId = flagNum(flags, "thread") ?? ids[1];
+      if (threadId === undefined) { console.log(usage("pr", "reply")); return 1; }
+      const comment = commentText(flags);
+      return runCmd((c) => cmd.prReply(c, {
+        repo: positional.find((p) => !/^\d+$/.test(p)),
+        prId: ids[0],
+        threadId,
+        comment,
+        status: flagStr(flags, "status"),
+        profile,
+      }));
     }
     case "vote": {
       const vote = positional.find((p) => ["approve", "reject", "wait", "suggestions"].includes(p));
       const t = parsePrTarget(positional.filter((p) => p !== vote));
-      if (!vote) { console.log(yellow("Usage: ado pr vote [repo] <prId> <approve|reject|wait|suggestions> [--comment <text>]")); return 1; }
+      if (!vote) { console.log(usage("pr", "vote")); return 1; }
       return runCmd((c) => cmd.prVote(c, { ...t, vote, comment: flagStr(flags, "comment"), profile }));
     }
     case "select": {
-      if (target.prId === undefined) { console.log(yellow("Usage: ado pr select [repo] <prId>")); return 1; }
+      if (target.prId === undefined) { console.log(usage("pr", "select")); return 1; }
       return runCmd((c) => cmd.prSelect(c, { repo: target.repo, prId: target.prId!, profile }));
     }
     case "file": {
       const path = flagStr(flags, "path") ?? positional.find((p) => !/^\d+$/.test(p) && p.includes("/"));
       const t = parsePrTarget(positional.filter((p) => p !== path));
-      if (!path) { console.log(yellow("Usage: ado pr file --path <file> [repo] <prId> [--start <n>] [--end <n>]")); return 1; }
+      if (!path) { console.log(usage("pr", "file")); return 1; }
       return runCmd((c) => cmd.prFile(c, { path, repo: t.repo, prId: t.prId, startLine: flagNum(flags, "start"), endLine: flagNum(flags, "end"), profile }));
     }
     case "create": {
@@ -472,7 +655,7 @@ async function runPrGroup(argv: string[]): Promise<number> {
       const targetBranch = flagStr(flags, "target");
       const title = flagStr(flags, "title");
       if (!repo || !sourceBranch || !targetBranch || !title) {
-        console.log(yellow("Usage: ado pr create --repo <r> --source <branch> --target <branch> --title <t> [--description <d>] [--wi 1,2] [--draft]"));
+        console.log(usage("pr", "create"));
         return 1;
       }
       return runCmd((c) => cmd.prCreate(c, {
@@ -498,14 +681,14 @@ async function runPrGroup(argv: string[]): Promise<number> {
       return runCmd((c) => cmd.prPublish(c, { ...target, profile }));
     case "reviewers": {
       const add = flagStrList(flags, "add");
-      if (!add?.length) { console.log(yellow("Usage: ado pr reviewers [repo] <prId> --add <user1,user2> [--required]")); return 1; }
+      if (!add?.length) { console.log(usage("pr", "reviewers")); return 1; }
       return runCmd((c) => cmd.prReviewers(c, { ...target, add, required: flagBool(flags, "required"), profile }));
     }
     case "chain": {
       const repo = flagStr(flags, "repo");
       const workItemIds = flagNumList(flags, "wi");
       if (!repo || !workItemIds?.length) {
-        console.log(yellow("Usage: ado pr chain --repo <r> --wi 1,2,3 [--base <branch>] [--strategy feature-chain|stacked] [--prefix <p>] [--branches a,b,c]"));
+        console.log(usage("pr", "chain"));
         return 1;
       }
       const strategy = flagStr(flags, "strategy");
@@ -525,6 +708,8 @@ async function runPrGroup(argv: string[]): Promise<number> {
 }
 
 async function runWiGroup(argv: string[]): Promise<number> {
+  const stop = preflight("wi", argv);
+  if (stop !== undefined) return stop;
   const sub = argv[0];
   const { positional, flags } = parseArgs(argv.slice(1));
   const profile = flagStr(flags, "profile");
@@ -554,19 +739,19 @@ async function runWiGroup(argv: string[]): Promise<number> {
       }));
     case "get": {
       const id = parseWorkItemId(positional[0]);
-      if (!id) { console.log(yellow("Usage: ado wi get <id>")); return 1; }
+      if (!id) { console.log(usage("wi", "get")); return 1; }
       return runCmd((c) => cmd.wiGet(c, { id, profile }));
     }
     case "types":
       return runCmd((c) => cmd.wiTypes(c, { profile }));
     case "fields": {
       const type = flagStr(flags, "type") ?? positional[0];
-      if (!type) { console.log(yellow("Usage: ado wi fields --type <type>")); return 1; }
+      if (!type) { console.log(usage("wi", "fields")); return 1; }
       return runCmd((c) => cmd.wiFields(c, { type, profile }));
     }
     case "update": {
       const id = parseWorkItemId(positional[0]);
-      if (!id) { console.log(yellow("Usage: ado wi update <id> [--title <t>] [--description <d>] [--state <s>] [--priority <n>] [--assigned <user>] [--area <p>] [--iteration <p>] [--tags <a;b>] [--field <Name>=<value>] [--comment <text>]")); return 1; }
+      if (!id) { console.log(usage("wi", "update")); return 1; }
       return runCmd((c) => cmd.wiUpdate(c, {
         id,
         title: flagStr(flags, "title"),
@@ -578,7 +763,8 @@ async function runWiGroup(argv: string[]): Promise<number> {
         iterationPath: flagStr(flags, "iteration"),
         tags: flagStr(flags, "tags"),
         customFields: parseFieldFlags(argv),
-        comment: flagStr(flags, "comment"),
+        comment: commentText(flags),
+        format: commentFormat(flags),
         profile,
       }));
     }
@@ -587,7 +773,7 @@ async function runWiGroup(argv: string[]): Promise<number> {
       const linkType = ["parent", "child", "related", "duplicate", "successor", "predecessor"].find((t) => flagBool(flags, t) || flagStr(flags, t) !== undefined);
       const targetId = linkType ? parseWorkItemId(flagStr(flags, linkType) ?? positional[1]) : undefined;
       if (!id || !linkType || !targetId) {
-        console.log(yellow("Usage: ado wi link <id> --parent|--child|--related|--duplicate <targetId> [--comment <text>]"));
+        console.log(usage("wi", "link"));
         return 1;
       }
       return runCmd((c) => cmd.wiLink(c, { id, targetId, linkType, comment: flagStr(flags, "comment"), profile }));
@@ -595,37 +781,38 @@ async function runWiGroup(argv: string[]): Promise<number> {
     case "attach": {
       const id = parseWorkItemId(positional[0]);
       const filePath = flagStr(flags, "file") ?? positional[1];
-      if (!id || !filePath) { console.log(yellow("Usage: ado wi attach <id> --file <path> [--comment <text>]")); return 1; }
+      if (!id || !filePath) { console.log(usage("wi", "attach")); return 1; }
       return runCmd((c) => cmd.wiAttach(c, { id, filePath, comment: flagStr(flags, "comment"), profile }));
     }
     case "attachments": {
       const id = parseWorkItemId(positional[0]);
-      if (!id) { console.log(yellow("Usage: ado wi attachments <id> [--dest <folder>]")); return 1; }
+      if (!id) { console.log(usage("wi", "attachments")); return 1; }
       return runCmd((c) => cmd.wiAttachments(c, { id, dest: flagStr(flags, "dest"), profile }));
     }
     case "query": {
       const wiql = flagStr(flags, "wiql") ?? positional[0];
-      if (!wiql) { console.log(yellow("Usage: ado wi query \"SELECT [System.Id] FROM WorkItems WHERE ...\"")); return 1; }
+      if (!wiql) { console.log(usage("wi", "query")); return 1; }
       return runCmd((c) => cmd.wiQuery(c, { wiql, profile }));
     }
     case "comment": {
       const id = parseWorkItemId(positional[0]);
-      const comment = flagStr(flags, "comment");
-      if (!id || !comment) { console.log(yellow("Usage: ado wi comment <id> --comment <text>")); return 1; }
-      return runCmd((c) => cmd.wiComment(c, { id, comment, profile }));
+      const comment = commentText(flags);
+      const format = commentFormat(flags);
+      if (!id || !comment) { console.log(usage("wi", "comment")); return 1; }
+      return runCmd((c) => cmd.wiComment(c, { id, comment, format, profile }));
     }
     case "related": {
       const id = parseWorkItemId(positional[0]);
-      if (!id) { console.log(yellow("Usage: ado wi related <id> [--state <s>] [--type <t>]")); return 1; }
+      if (!id) { console.log(usage("wi", "related")); return 1; }
       return runCmd((c) => cmd.wiRelated(c, { id, state: flagStr(flags, "state"), workItemType: flagStr(flags, "type"), profile }));
     }
     case "create": {
-      if (!flagStr(flags, "title")) { console.log(yellow("Usage: ado wi create --title <t> [--type <type>] [--description <d>] [--parent <id>] [--field <Name>=<value>] ...")); return 1; }
+      if (!flagStr(flags, "title")) { console.log(usage("wi", "create")); return 1; }
       return runCmd((c) => cmd.wiCreate(c, { ...wiCreateArgs(), parentId: flagNum(flags, "parent") }));
     }
     case "create-child": {
       const parentId = flagNum(flags, "parent");
-      if (!parentId || !flagStr(flags, "title")) { console.log(yellow("Usage: ado wi create-child --parent <id> --title <t> [--type <type>] [--field <Name>=<value>] ...")); return 1; }
+      if (!parentId || !flagStr(flags, "title")) { console.log(usage("wi", "create-child")); return 1; }
       return runCmd((c) => cmd.wiCreateChild(c, { ...wiCreateArgs(), parentId }));
     }
     default:
@@ -1169,9 +1356,10 @@ const USAGE = [
   `    ${cyan("node dist/bin/opencode-ado.js sync-local")}  Register local workspace build without publishing`,
   `    ${cyan("npx @cioffinahuel/opencode-ado show")}    Show current config`,
   `    ${cyan("ado profile [list|use <name>]")}          Show/list/switch ADO profile`,
-  `    ${cyan("ado pr <list|get|threads|diff|context|comment|vote|select|file|create|complete|abandon|publish|reviewers|chain>")}`,
+  `    ${cyan("ado pr <list|get|threads|diff|context|comment|reply|vote|select|file|create|complete|abandon|publish|reviewers|chain>")}`,
   `    ${cyan("ado pipeline <list|runs|run>")}`,
   `    ${cyan("ado wi <list|get|types|fields|query|update|link|attach|attachments|comment|related|create|create-child>")}`,
+  `    ${cyan("ado <group> [<command>] --help")}        Usage and flags of a group or command`,
   `    ${cyan("npx @cioffinahuel/opencode-ado --help")}  Show this help`,
   "",
 ].join("\n");
@@ -1187,10 +1375,18 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (command === "sync" || command === "repair" || command === "install") return runSync();
   if (command === "sync-local") return runSyncLocal();
   if (command === "show") return runShow();
-  if (command === "profile") return runProfileGroup(argv.slice(1));
-  if (command === "pr") return runPrGroup(argv.slice(1));
-  if (command === "wi") return runWiGroup(argv.slice(1));
-  if (command === "pipeline") return runPipelineGroup(argv.slice(1));
+  const groups: Record<string, (argv: string[]) => Promise<number>> = {
+    profile: runProfileGroup, pr: runPrGroup, wi: runWiGroup, pipeline: runPipelineGroup,
+  };
+  if (groups[command]) {
+    try {
+      return await groups[command](argv.slice(1));
+    } catch (err) {
+      // Argument errors (unreadable --comment-file, bad --field/--format) end here.
+      console.log(yellow(err instanceof Error ? err.message : String(err)));
+      return 1;
+    }
+  }
   console.log(`Unknown command: ${command}`);
   console.log(USAGE);
   return 1;

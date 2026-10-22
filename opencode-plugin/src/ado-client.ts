@@ -181,6 +181,22 @@ export class AdoClient {
     );
   }
 
+  /** Reply on an existing PR thread. */
+  async replyToThread(repo: string, prId: number, threadId: number, content: string) {
+    return this.request<any>(
+      `/git/repositories/${encodeURIComponent(repo)}/pullrequests/${prId}/threads/${threadId}/comments`,
+      { method: "POST", body: JSON.stringify({ content, commentType: "text" }) },
+    );
+  }
+
+  /** Set a PR thread's status (active, fixed, wontFix, closed, byDesign, pending). */
+  async updateThreadStatus(repo: string, prId: number, threadId: number, status: string) {
+    return this.request<any>(
+      `/git/repositories/${encodeURIComponent(repo)}/pullrequests/${prId}/threads/${threadId}`,
+      { method: "PATCH", body: JSON.stringify({ status }) },
+    );
+  }
+
   /** Patch a pull request (complete, abandon, reactivate, publish a draft). */
   async updatePullRequest(repo: string, prId: number, body: Record<string, unknown>) {
     return this.request<any>(
@@ -219,8 +235,8 @@ export class AdoClient {
   }
 
   /** Resolve a user identity id from a display name or email. */
-  async findIdentityId(query: string): Promise<{ id: string; displayName: string } | null> {
-    const data = await this.request<{ value?: any[] }>(
+  async findIdentityId(query: string): Promise<{ id: string; displayName: string; uniqueName?: string } | null> {
+    const data = await this.request<{ results?: any[]; value?: any[] }>(
       `/IdentityPicker/Identities?api-version=7.1-preview.1`,
       {
         method: "POST",
@@ -235,9 +251,15 @@ export class AdoClient {
       "org",
       "7.1-preview.1",
     );
-    const identity = data.value?.[0]?.identities?.[0];
+    // The picker answers `{ results: [{ identities }] }`; `value` kept for older servers.
+    const identity = (data.results ?? data.value)?.[0]?.identities?.[0];
     if (!identity) return null;
-    return { id: identity.localId ?? identity.entityId, displayName: identity.displayName ?? query };
+    const uniqueName = identity.signInAddress ?? identity.mail;
+    return {
+      id: identity.localId ?? identity.entityId,
+      displayName: identity.displayName ?? query,
+      ...(uniqueName ? { uniqueName } : {}),
+    };
   }
 
   // ─── Diff & iteration methods ────────────────────────────────────
@@ -499,9 +521,10 @@ export class AdoClient {
     return data;
   }
 
-  async addWorkItemComment(id: number, text: string): Promise<any> {
+  /** Markdown by default: without `format` ADO stores the text as HTML and Markdown renders literally. */
+  async addWorkItemComment(id: number, text: string, format: "markdown" | "html" = "markdown"): Promise<any> {
     return this.request<any>(
-      `/_apis/wit/workItems/${id}/comments`,
+      `/_apis/wit/workItems/${id}/comments?format=${format}`,
       {
         method: "POST",
         body: JSON.stringify({ text }),
@@ -745,11 +768,11 @@ export function chunkArray<T>(items: T[], size: number): T[][] {
 
 function plainText(value: unknown): string {
   if (value === undefined || value === null) return "";
-  return String(value)
+  return decodeHtmlEntities(String(value)
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|li)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
+    .replace(/&nbsp;/g, " "))
     .trim();
 }
 
@@ -771,8 +794,9 @@ export async function formatComments(ado: AdoClient, id: number): Promise<string
   for (const c of comments.slice(0, 20)) {
     const author = c.createdBy?.displayName ?? c.author?.displayName ?? "?";
     const date = (c.createdDate ?? c.date ?? "")?.slice(0, 10);
-    let text = plainText(c.text ?? c.renderedText);
-    text = text.replace(/\\n/g, " ").replace(/\s+/g, " ").slice(0, 300);
+    // Full text; continuation lines indented so each comment stays one block.
+    const raw = String(c.format ?? "").toLowerCase() === "markdown" ? String(c.text ?? "").trim() : plainText(c.text ?? c.renderedText);
+    const text = raw.replace(/\n{3,}/g, "\n\n").replace(/\n/g, "\n  ");
     out += `- ${author}${date ? ` ${date}` : ""}: ${text}\n`;
   }
   return out;
@@ -879,6 +903,23 @@ export async function findPrAcrossProfiles(
 }
 
 /**
+ * Profile to use for a repo: the one whose `repos` lists it (case-insensitive).
+ * Several matches → the active one if among them, else an error. No match →
+ * undefined so callers fall back to the active profile.
+ */
+export function profileForRepo(config: AdoConfig, repo: string): string | undefined {
+  const wanted = repo.toLowerCase();
+  const matches = Object.entries(config.profiles)
+    .filter(([, p]) => (p.repos ?? []).some((r) => r.toLowerCase() === wanted))
+    .map(([name]) => name);
+  if (matches.length <= 1) return matches[0];
+  const persisted = getActiveProfile();
+  const active = persisted && config.profiles[persisted] ? persisted : resolveActiveProfile(config).name;
+  if (matches.includes(active)) return active;
+  throw new Error(`Repo "${repo}" is configured in several profiles (${matches.join(", ")}). Pass --profile <name>.`);
+}
+
+/**
  * Resolve repo+prId with auto-discovery when only prId is provided.
  */
 export async function resolvePrArgsAuto(
@@ -886,7 +927,7 @@ export async function resolvePrArgsAuto(
   args: { repo?: string; prId?: number; profile?: string },
 ): Promise<{ repo: string; prId: number; profileName: string }> {
   if (args.repo && args.prId) {
-    const profileName = args.profile ?? getActiveProfile() ?? "";
+    const profileName = args.profile ?? profileForRepo(config, args.repo) ?? getActiveProfile() ?? "";
     return { repo: args.repo, prId: args.prId, profileName };
   }
 
@@ -905,6 +946,6 @@ export async function resolvePrArgsAuto(
       "No PR specified. Provide prId (auto-discovers across profiles), repo+prId, or select a PR in the sidebar.",
     );
   }
-  const profileName = args.profile ?? getActiveProfile() ?? "";
+  const profileName = args.profile ?? profileForRepo(config, selected.repo) ?? getActiveProfile() ?? "";
   return { ...selected, profileName };
 }

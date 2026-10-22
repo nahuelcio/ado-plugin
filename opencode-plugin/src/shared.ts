@@ -240,12 +240,18 @@ export function fmtPRDetail(pr: any): string {
   return lines.join("\n");
 }
 
-/** Format a thread as a concise summary line. */
+/**
+ * Format a thread: header (`#id [status] path:Lline`) then every live comment
+ * as `author: content`, full text with continuation lines indented.
+ */
 export function fmtThread(t: any): string {
-  const file = t.threadContext?.filePath?.split("/").pop() ?? "";
-  const status = t.status ?? "?";
-  const firstComment = (t.comments?.[0]?.content ?? "").slice(0, 80);
-  return `[${status}] ${file ? file + ": " : ""}${firstComment} (${t.comments?.length ?? 0}c)`;
+  const ctx = t.threadContext;
+  const line = ctx?.rightFileStart?.line ?? ctx?.leftFileStart?.line;
+  const where = ctx?.filePath ? ` ${ctx.filePath}${line ? `:L${line}` : ""}` : "";
+  const comments = (t.comments ?? [])
+    .filter((c: any) => !c.isDeleted)
+    .map((c: any) => `  ${c.author?.displayName ?? "?"}: ${String(c.content ?? "").replace(/\r?\n/g, "\n    ")}`);
+  return [`#${t.id ?? "?"} [${t.status ?? "?"}]${where}`, ...comments].join("\n");
 }
 
 // ─── Work Item formatting helpers ────────────────────────────────────────

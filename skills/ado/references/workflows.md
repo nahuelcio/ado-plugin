@@ -19,8 +19,9 @@ Guidelines:
 
 ## Answer / follow up on PR threads
 
-1. `ado pr threads <prId>` — read existing discussion.
-2. Reply with `ado pr comment <prId> --comment "<reply>"` (anchor with `--file`/`--line` when it targets code).
+1. `ado pr threads <prId>` — full discussion; each thread starts with `#<threadId>`.
+2. Reply in the thread: `ado pr reply <prId> <threadId> --comment "<reply>"`; add `--status fixed` (or `wontFix`, `closed`, `byDesign`) to resolve it, or pass `--status` alone.
+3. New feedback goes in a new thread: `ado pr comment <prId> --comment "<text>" [--file <path> --line <n>]`.
 
 ## Create a work item
 

@@ -25,10 +25,12 @@ import {
   createClientFromConfig,
   findPrAcrossProfiles,
   resolvePrArgsAuto,
+  profileForRepo,
   workItemIdFromUrl,
 } from "./ado-client.js";
+import type { AdoClient } from "./ado-client.js";
 import { loadProjectConfig } from "./chain-config.js";
-import { buildFieldPatchOps, validateWorkItemCreation } from "./wi-create.js";
+import { buildFieldPatchOps, checkFieldValues, validateWorkItemCreation } from "./wi-create.js";
 import { runCreatePr, runChainPrs } from "./chain-runner.js";
 
 // ─── PR commands ────────────────────────────────────────────────────────────
@@ -47,10 +49,13 @@ export async function prList(config: AdoConfig, args: { profile?: string }): Pro
 
   const pending = allPRs.filter(pr => pr.reviewers?.some((r: any) => r.id === userId.id && r.vote === 0));
   const mine = allPRs.filter(pr => pr.createdBy?.id === userId.id);
+  const myVote = (pr: any) => pr.reviewers?.find((r: any) => r.id === userId.id)?.vote ?? 0;
+  const voted = allPRs.filter(pr => myVote(pr) !== 0 && pr.createdBy?.id !== userId.id);
 
-  if (!pending.length && !mine.length) return `## PRs (${name})\nNone`;
+  if (!pending.length && !mine.length && !voted.length) return `## PRs (${name})\nNone`;
   let out = `## PRs (${name})\n`;
   if (pending.length) { out += `\n### Review (${pending.length})\n${pending.map(fmtPR).join("\n")}\n`; }
+  if (voted.length) { out += `\n### Voted (${voted.length})\n${voted.map(pr => `${fmtPR(pr)} vote:${myVote(pr)}`).join("\n")}\n`; }
   if (mine.length) { out += `\n### Yours (${mine.length})\n${mine.map(fmtPR).join("\n")}\n`; }
   out += `\n${allPRs.length} total · ${prof.repos.length} repos`;
   return out;
@@ -95,6 +100,27 @@ export async function prComment(
   await ado.createThread(resolved.repo, resolved.prId, args.comment, { filePath: args.filePath, line: args.line });
   const parts = [`PR #${resolved.prId}`, args.filePath && `file:${args.filePath}`, args.line !== undefined && `L${args.line}`].filter(Boolean);
   return `${parts.join(" ")}\ncomment: ${args.comment}`;
+}
+
+/** Thread statuses accepted by ADO (CommentThreadStatus, minus `unknown`). */
+export const PR_THREAD_STATUSES = ["active", "fixed", "wontFix", "closed", "byDesign", "pending"];
+
+export async function prReply(
+  config: AdoConfig,
+  args: { repo?: string; prId?: number; threadId: number; comment?: string; status?: string; profile?: string },
+): Promise<string> {
+  const status = args.status && PR_THREAD_STATUSES.find((s) => s.toLowerCase() === args.status!.toLowerCase());
+  if (args.status && !status) throw new Error(`Invalid --status '${args.status}'. Use one of: ${PR_THREAD_STATUSES.join(", ")}`);
+  if (!args.comment && !status) throw new Error("Provide --comment (or --comment-file) and/or --status.");
+  const resolved = await resolvePrArgsAuto(config, args);
+  const { client: ado } = await createClientFromConfig(config, resolved.profileName);
+  if (args.comment) await ado.replyToThread(resolved.repo, resolved.prId, args.threadId, args.comment);
+  if (status) await ado.updateThreadStatus(resolved.repo, resolved.prId, args.threadId, status);
+  return [
+    `PR #${resolved.prId} thread ${args.threadId}`,
+    args.comment && `reply: ${args.comment}`,
+    status && `status: ${status}`,
+  ].filter(Boolean).join("\n");
 }
 
 export async function prVote(
@@ -295,7 +321,7 @@ export async function prCreate(
   config: AdoConfig,
   args: { repo: string; sourceBranch: string; targetBranch: string; title: string; description?: string; workItemIds?: number[]; isDraft?: boolean; profile?: string },
 ): Promise<string> {
-  const { client: ado } = await createClientFromConfig(config, args.profile);
+  const { client: ado } = await createClientFromConfig(config, args.profile ?? profileForRepo(config, args.repo));
   const projectConfig = await loadProjectConfig(process.cwd());
   return runCreatePr(ado, projectConfig, {
     repo: args.repo,
@@ -312,7 +338,7 @@ export async function prChain(
   config: AdoConfig,
   args: { repo: string; workItemIds: number[]; baseBranch?: string; strategy?: "feature-chain" | "stacked"; prefix?: string; branchNames?: string[]; profile?: string },
 ): Promise<string> {
-  const { client: ado } = await createClientFromConfig(config, args.profile);
+  const { client: ado } = await createClientFromConfig(config, args.profile ?? profileForRepo(config, args.repo));
   const projectConfig = await loadProjectConfig(process.cwd());
   return runChainPrs(ado, projectConfig, {
     repo: args.repo,
@@ -378,6 +404,8 @@ interface WiUpdateArgs {
   iterationPath?: string;
   tags?: string;
   comment?: string;
+  /** Work item comment format; markdown unless `html` is asked for. */
+  format?: "markdown" | "html";
   customFields?: Record<string, string>;
   profile?: string;
 }
@@ -391,7 +419,7 @@ export async function wiUpdate(config: AdoConfig, args: WiUpdateArgs): Promise<s
   if (args.description !== undefined) fields.description = args.description;
   if (args.state !== undefined) fields.state = args.state;
   if (args.priority !== undefined) fields.priority = args.priority;
-  if (args.assignedTo !== undefined) fields.assignedTo = args.assignedTo;
+  if (args.assignedTo !== undefined) fields.assignedTo = await resolveAssignee(ado, args.assignedTo);
   if (args.areaPath !== undefined) fields.areaPath = args.areaPath;
   if (args.iterationPath !== undefined) fields.iterationPath = args.iterationPath;
   if (args.tags !== undefined) fields.tags = args.tags;
@@ -401,7 +429,7 @@ export async function wiUpdate(config: AdoConfig, args: WiUpdateArgs): Promise<s
     return "No changes. Provide a field, --field <Name>=<value>, or --comment.";
   }
   if (patchOps.length > 0) await ado.updateWorkItem(args.id, patchOps);
-  if (args.comment) await ado.addWorkItemComment(args.id, args.comment);
+  if (args.comment) await ado.addWorkItemComment(args.id, args.comment, args.format);
   const changed = patchOps.map((op) => op.path.replace("/fields/", ""));
   if (args.comment) changed.push("comment");
   return `#${args.id} updated: ${changed.join(", ")}`;
@@ -483,9 +511,12 @@ export async function wiQuery(
   return `## WIQL (${name})\n${workItems.map(fmtWorkItem).join("\n")}\n${workItems.length} total`;
 }
 
-export async function wiComment(config: AdoConfig, args: { id: number; comment: string; profile?: string }): Promise<string> {
+export async function wiComment(
+  config: AdoConfig,
+  args: { id: number; comment: string; format?: "markdown" | "html"; profile?: string },
+): Promise<string> {
   const { client: ado } = await createClientFromConfig(config, args.profile);
-  await ado.addWorkItemComment(args.id, args.comment);
+  await ado.addWorkItemComment(args.id, args.comment, args.format);
   return `#${args.id}: comment added`;
 }
 
@@ -524,6 +555,28 @@ interface WiCreateArgs {
   profile?: string;
 }
 
+/**
+ * Resolve a user given as name/email to the identity's unique name so ADO
+ * gets an unambiguous AssignedTo. Unresolved input is sent as-is.
+ */
+async function resolveAssignee(ado: AdoClient, who: string): Promise<string> {
+  if (!who.trim()) return who; // empty clears the field
+  const identity = await ado.findIdentityId(who).catch(() => null);
+  return identity?.uniqueName ?? identity?.displayName ?? who;
+}
+
+/** Resolve the assignee and check values against the type's fields. Returns an error message or null. */
+async function prepareWiCreate(
+  ado: AdoClient,
+  type: string,
+  fields: Record<string, unknown>,
+  customFields?: Record<string, string>,
+): Promise<string | null> {
+  if (typeof fields.assignedTo === "string") fields.assignedTo = await resolveAssignee(ado, fields.assignedTo);
+  const defs = await ado.getWorkItemTypeFields(type).catch(() => []);
+  return checkFieldValues(type, defs, buildFieldPatchOps(fields, customFields));
+}
+
 function buildWiFields(args: WiCreateArgs): Record<string, unknown> {
   const fields: Record<string, unknown> = { title: args.title };
   if (args.description !== undefined) fields.description = args.description;
@@ -548,6 +601,9 @@ export async function wiCreate(config: AdoConfig, args: WiCreateArgs): Promise<s
 
   if (!fields.state) fields.state = projectConfig.work_item.create.default_state;
   if (projectConfig.work_item.create.auto_assign && !fields.assignedTo) fields.assignedTo = userId.displayName;
+
+  const invalid = await prepareWiCreate(ado, effectiveType, fields, args.customFields);
+  if (invalid) return `Error: ${invalid}`;
 
   const parentRelation = args.parentId
     ? { parentId: args.parentId, relationType: "System.LinkTypes.Hierarchy-Reverse" }
@@ -587,6 +643,9 @@ export async function wiCreateChild(config: AdoConfig, args: WiCreateArgs & { pa
 
   if (!fields.state) fields.state = projectConfig.work_item.create.default_state;
   if (projectConfig.work_item.create.auto_assign && !fields.assignedTo) fields.assignedTo = userId.displayName;
+
+  const invalid = await prepareWiCreate(ado, effectiveType, fields, args.customFields);
+  if (invalid) return `Error: ${invalid}`;
 
   const parentRelation = { parentId: args.parentId, relationType: "System.LinkTypes.Hierarchy-Reverse" };
 

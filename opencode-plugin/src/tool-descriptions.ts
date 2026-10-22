@@ -22,7 +22,7 @@ export const D = {
   },
   pr_threads: {
     name: "ado_pr_threads",
-    description: "Show PR comment threads",
+    description: "Show PR comment threads: thread id, status, file:line and every comment in full",
     params: {
       repo: "Omit to auto-discover by PR ID",
       prId: "PR ID",
@@ -154,7 +154,7 @@ export const D = {
   },
   wi_comment: {
     name: "ado_wi_comment",
-    description: "Add comment to work item",
+    description: "Add a Markdown comment to a work item",
     params: {
       id: "Work item ID",
       profile: "Profile override",

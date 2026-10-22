@@ -124,3 +124,30 @@ export function validateWorkItemCreation(
 
   return null;
 }
+
+/**
+ * Check patch ops against the type's field definitions (`ado wi fields`):
+ * unknown field references and values outside a picklist are reported before
+ * the POST, so a create fails once with the allowed values instead of ADO's
+ * opaque 400. Returns `null` when everything checks out.
+ * ponytail: area/iteration paths are tree nodes, not picklists; ADO still validates those.
+ */
+export function checkFieldValues(
+  type: string,
+  fieldDefs: Array<{ referenceName?: string; allowedValues?: unknown[] }>,
+  ops: Array<{ path: string; value: unknown }>,
+): string | null {
+  if (!fieldDefs.length) return null;
+  const byRef = new Map(fieldDefs.map((f) => [String(f.referenceName ?? "").toLowerCase(), f]));
+  for (const op of ops) {
+    const ref = op.path.replace(/^\/fields\//, "");
+    if (ref === "System.AssignedTo") continue; // identity, resolved separately
+    const def = byRef.get(ref.toLowerCase());
+    if (!def) return `'${ref}' is not a field of '${type}'. List them with: ado wi fields --type "${type}"`;
+    const allowed = (def.allowedValues ?? []).map(String);
+    if (allowed.length && !allowed.some((a) => a.toLowerCase() === String(op.value).toLowerCase())) {
+      return `Invalid value '${op.value}' for ${ref} on '${type}'. Allowed: ${allowed.join(" | ")}`;
+    }
+  }
+  return null;
+}

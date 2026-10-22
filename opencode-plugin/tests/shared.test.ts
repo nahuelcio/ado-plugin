@@ -9,6 +9,7 @@ import {
   asAdoConfig,
   resolveActiveProfile,
   relativeTime,
+  fmtThread,
 } from "../src/shared.js";
 
 describe("PAT validation", () => {
@@ -271,5 +272,38 @@ describe("relativeTime", () => {
 
   it("handles undefined", () => {
     expect(relativeTime(undefined)).toBe("");
+  });
+});
+describe("fmtThread", () => {
+  const thread = {
+    id: 42,
+    status: "active",
+    threadContext: { filePath: "/src/app/login.ts", rightFileStart: { line: 17, offset: 1 } },
+    comments: [
+      { id: 1, author: { displayName: "Alice" }, content: "This null check is wrong.\nIt should guard `user` before reading `user.id`, otherwise the login page crashes for anonymous visitors." },
+      { id: 2, parentCommentId: 1, author: { displayName: "Bob" }, content: "Good catch, fixed in the next push." },
+      { id: 3, author: { displayName: "Carol" }, content: "gone", isDeleted: true },
+    ],
+  };
+
+  it("prints thread id, status and file:line", () => {
+    expect(fmtThread(thread).split("\n")[0]).toBe("#42 [active] /src/app/login.ts:L17");
+  });
+
+  it("prints every comment with author and full content, preserving newlines", () => {
+    const out = fmtThread(thread);
+    expect(out).toContain("Alice: This null check is wrong.\n");
+    expect(out).toContain("otherwise the login page crashes for anonymous visitors.");
+    expect(out).toContain("Bob: Good catch, fixed in the next push.");
+    expect(out).not.toMatch(/\(\d+c\)/);
+  });
+
+  it("skips deleted comments", () => {
+    expect(fmtThread(thread)).not.toContain("Carol");
+  });
+
+  it("omits the location for general threads", () => {
+    const out = fmtThread({ id: 7, status: "fixed", comments: [{ author: { displayName: "Dan" }, content: "LGTM" }] });
+    expect(out).toBe("#7 [fixed]\n  Dan: LGTM");
   });
 });

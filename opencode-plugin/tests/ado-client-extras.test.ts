@@ -1,4 +1,4 @@
-import { AdoClient } from "../src/ado-client.js";
+import { AdoClient, formatComments } from "../src/ado-client.js";
 
 function makeClient(): AdoClient {
   return new AdoClient(
@@ -225,5 +225,137 @@ describe("AdoClient.getPullRequestWorkItems", () => {
 
     expect(ids).toEqual([15497, 15498]);
     expect(String(fetchSpy.mock.calls[0][0])).toContain("/pullRequests/5017/workitems");
+  });
+});
+
+describe("AdoClient PR thread reply/status", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  it("replyToThread POSTs a text comment to the thread's comments endpoint", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 2 }));
+    await makeClient().replyToThread("web", 5, 148, "Good idea");
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain("/git/repositories/web/pullrequests/5/threads/148/comments?api-version=7.1");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ content: "Good idea", commentType: "text" });
+  });
+
+  it("updateThreadStatus PATCHes only the thread status", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 148, status: "fixed" }));
+    await makeClient().updateThreadStatus("web", 5, 148, "fixed");
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain("/git/repositories/web/pullrequests/5/threads/148?api-version=7.1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ status: "fixed" });
+  });
+});
+
+describe("AdoClient.addWorkItemComment format", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  it("sends format=markdown by default so Markdown renders", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 1 }));
+    await makeClient().addWorkItemComment(299, "# Report\n- a\n- b");
+    const url = new URL(String(fetchSpy.mock.calls[0][0]));
+    expect(url.pathname).toContain("/wit/workItems/299/comments");
+    expect(url.searchParams.get("format")).toBe("markdown");
+    expect(url.searchParams.get("api-version")).toBe("7.1-preview.4");
+    expect(JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string)).toEqual({ text: "# Report\n- a\n- b" });
+  });
+
+  it("honours an explicit html format", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 1 }));
+    await makeClient().addWorkItemComment(299, "<b>x</b>", "html");
+    expect(new URL(String(fetchSpy.mock.calls[0][0])).searchParams.get("format")).toBe("html");
+  });
+});
+
+describe("formatComments", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  it("shows the full comment with its line breaks", async () => {
+    const long = "Run report\n" + "x".repeat(400) + "\n| a | b |\n|---|---|";
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      comments: [{ text: long, createdBy: { displayName: "QA Bot" }, createdDate: "2026-10-01T00:00:00Z" }],
+    }));
+    const out = await formatComments(makeClient(), 1);
+    expect(out).toContain("QA Bot 2026-10-01: Run report\n");
+    expect(out).toContain("x".repeat(400));
+    expect(out).toContain("| a | b |\n");
+  });
+
+  it("prints markdown comments verbatim (no tag stripping)", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      comments: [{ text: "if a < b > c then `<br>`", format: "markdown", createdBy: { displayName: "A" } }],
+    }));
+    expect(await formatComments(makeClient(), 1)).toContain("A: if a < b > c then `<br>`");
+  });
+
+  it("turns html comments into readable text with line breaks", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      comments: [{ text: "<div>one</div><div>two &amp; three</div>", createdBy: { displayName: "A" } }],
+    }));
+    const out = await formatComments(makeClient(), 1);
+    expect(out).toContain("A: one\n");
+    expect(out).toContain("two & three");
+  });
+});
+
+describe("AdoClient.findIdentityId", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  // Real IdentityPicker response shape: { results: [{ queryToken, identities: [...] }] }
+  const pickerResponse = {
+    results: [{
+      queryToken: "alice",
+      identities: [{
+        entityId: "vss.ds.v1.aad.user.0f2c",
+        entityType: "User",
+        originDirectory: "aad",
+        originId: "0f2c7f8e-aad-object-id",
+        localDirectory: "vsd",
+        localId: "6a7b3d4e-1111-2222-3333-444455556666",
+        displayName: "Alice Smith",
+        scopeName: "Contoso",
+        samAccountName: "alice",
+        active: null,
+        subjectDescriptor: "aad.MGYyYzdmOGU",
+        mail: "alice@contoso.com",
+        mailNickname: "alice",
+        signInAddress: "alice@contoso.com",
+        surname: "Smith",
+        guest: false,
+        isMru: false,
+      }],
+      pagingToken: null,
+    }],
+  };
+
+  it("reads identities from results[] (the picker's real response key)", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(pickerResponse));
+    const identity = await makeClient().findIdentityId("alice");
+    expect(identity).toEqual({
+      id: "6a7b3d4e-1111-2222-3333-444455556666",
+      displayName: "Alice Smith",
+      uniqueName: "alice@contoso.com",
+    });
+  });
+
+  it("still accepts a legacy value[] shape", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ value: pickerResponse.results }));
+    expect((await makeClient().findIdentityId("alice"))?.id).toBe("6a7b3d4e-1111-2222-3333-444455556666");
+  });
+
+  it("returns null when nothing matches", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ results: [{ queryToken: "zed", identities: [] }] }));
+    expect(await makeClient().findIdentityId("zed")).toBeNull();
   });
 });

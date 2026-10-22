@@ -16,7 +16,9 @@ the `ado` CLI — do NOT load the OpenCode plugin tools for these operations.
 - Run every operation through the `ado` CLI (`ado <group> <sub>`). One command per action.
 - Inspect before mutating: read PR/WI state before `vote`, `comment`, `update`, `create`, `chain`.
 - Never invent IDs, repos, or branch names — discover them with a read command first.
-- `[repo]` is optional; omit it to auto-discover a PR by ID. `--profile <name>` overrides the active profile.
+- `[repo]` is optional; omit it to auto-discover a PR by ID. A given repo selects the profile that lists it; `--profile <name>` overrides.
+- Only pass flags the command lists: unknown flags are an error (with a "did you mean"). Check with `ado <group> <cmd> --help`.
+- Long or multi-line bodies: write them to a file and pass `--comment-file <path>` (pr comment, pr reply, wi comment, wi update).
 
 ## Decision Gates
 
@@ -26,7 +28,7 @@ the `ado` CLI — do NOT load the OpenCode plugin tools for these operations.
 | Enable/disable or restrict work item creation | edit `[work_item.create]` in `.adoconfig.toml` → see `references/setup.md` |
 | Which profile / switch it | `ado profile` · `ado profile use <name>` |
 | Inspect a PR | `ado pr get`/`context`/`threads`/`diff`/`file` |
-| Act on a PR | `ado pr vote`/`comment`/`create`/`chain` |
+| Act on a PR | `ado pr vote`/`comment`/`reply`/`create`/`chain` |
 | Inspect a work item | `ado wi get`/`list`/`related`/`types` |
 | Act on a work item | `ado wi update`/`comment`/`create`/`create-child` |
 
